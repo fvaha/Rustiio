@@ -1,6 +1,15 @@
 //! Prozor + ožičenje: server se diže u pozadini, prozor pokazuje na njega.
 
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+/// Dnevnik: razina iz `RUSTIIO_LOG` (default `info`).
+///
+/// Desktop aplikacija inače ne bi ostavljala nikakav trag — kad je digne
+/// `launchd`/`systemd`, ovaj izlaz ide u dnevnik te usluge.
+fn init_logging() {
+    let level = std::env::var("RUSTIIO_LOG").unwrap_or_else(|_| "info".to_string());
+    let _ = tracing_subscriber::fmt().with_env_filter(level).try_init();
+}
+
+#[cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod paths;
 mod server;
@@ -8,6 +17,7 @@ mod server;
 use tauri::Manager;
 
 fn main() {
+    init_logging();
     // Server prvo: prozor ima što pokazati čim se otvori.
     let config_path = match paths::config_path() {
         Ok(path) => path,

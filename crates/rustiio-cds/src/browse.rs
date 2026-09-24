@@ -394,11 +394,14 @@ mod tests {
         let catalog = catalog_with(&dir);
 
         let out = browse(&catalog, &children_request("0"), &options()).expect("browse");
-        assert_eq!(out.total, 5, "1 mapa + 4 kategorije");
+        assert_eq!(out.total, 3, "1 mapa + 2 kategorije");
         assert!(out.didl.contains("<dc:title>Filmovi</dc:title>"));
         assert!(out.didl.contains("object.container.storageFolder"));
-        for title in ["Video", "Nedavno dodano", "Muzika", "Slike"] {
+        for title in ["Video", "Nedavno dodano"] {
             assert!(out.didl.contains(&format!("<dc:title>{title}</dc:title>")), "fali {title}");
+        }
+        for gone in ["Muzika", "Slike"] {
+            assert!(!out.didl.contains(&format!("<dc:title>{gone}</dc:title>")), "{gone} ne treba");
         }
         // kategorije idu prije pravih mapa
         assert!(out.didl.find("v:video").unwrap() < out.didl.find("<dc:title>Filmovi</dc:title>").unwrap());

@@ -8,9 +8,16 @@
     <title>Rustiio</title>
   </head>
   <body>
-    <div id="app">
-      <p style="font: 15px system-ui; color: #8b949e; padding: 24px">Rustiio se učitava…</p>
+    <!-- Zamjenski ekran dok se aplikacija ne montira; `main.js` ga obriše.
+         Ne smije stajati unutar `#app` — Svelte `mount()` ne briše postojeći sadržaj. -->
+    <div id="boot">
+      <div class="boot-card">
+        <div class="boot-mark">R</div>
+        <div class="boot-name">Rustiio</div>
+        <div class="boot-note">Pokrećem sučelje…</div>
+      </div>
     </div>
+    <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

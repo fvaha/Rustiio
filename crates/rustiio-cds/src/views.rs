@@ -17,7 +17,9 @@ pub enum View {
 }
 
 /// Redoslijed u kojem se kategorije pojavljuju na vrhu.
-pub const ALL: [View; 4] = [View::Video, View::Recent, View::Audio, View::Image];
+///
+/// Rustiio je video server — glazba i slike se ne nude (ni u sučelju ni na TV-u).
+pub const ALL: [View; 2] = [View::Video, View::Recent];
 
 const VIDEO_KINDS: [NodeKind; 1] = [NodeKind::Video];
 const AUDIO_KINDS: [NodeKind; 1] = [NodeKind::Audio];
@@ -131,7 +133,8 @@ mod tests {
     fn views_have_stable_ids_and_titles() {
         assert_eq!(View::Video.id(), "v:video");
         assert_eq!(View::Recent.title(), "Nedavno dodano");
-        assert_eq!(find("v:image"), Some(View::Image));
+        assert_eq!(find("v:image"), None, "slike nisu dio video servera");
+        assert_eq!(ALL.len(), 2, "samo Video i Nedavno dodano");
         assert_eq!(find("7"), None);
         assert!(is_view_id("v:recent"));
         assert!(!is_view_id("12"));

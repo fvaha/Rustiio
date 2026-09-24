@@ -116,8 +116,11 @@ export const FIELDS = {
   },
 
   'library.roots': {
-    label: { hr: 'Mape s medijima', en: 'Media folders' },
-    help: { hr: 'Svaka mapa dobiva svoju ulaznu točku na televizoru.', en: 'Each folder becomes its own entry on the TV.' },
+    label: { hr: 'Mape s video zapisima', en: 'Video folders' },
+    help: {
+      hr: 'Rustiio je video server — dodaj mape u kojima ti je video. Klikni „Odaberi" i pregledaj mape na ovom računalu.',
+      en: 'Rustiio is a video server — add the folders holding your video. Click "Browse" to look through the folders on this machine.',
+    },
     type: 'roots',
   },
   'library.video_extensions': {

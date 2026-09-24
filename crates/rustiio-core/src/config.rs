@@ -278,7 +278,7 @@ pub fn guess_roots() -> Vec<Root> {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| path.display().to_string());
-        out.push(Root { label, path, kind: RootKind::Mixed });
+        out.push(Root { label, path, kind: RootKind::Video });
     }
     out
 }

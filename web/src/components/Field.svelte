@@ -2,7 +2,7 @@
   // Jedno polje configa: nacrtaj kontrolu prema opisu iz settings-schema.js.
   // Vrijednost se mijenja samo kroz onchange (roditelj drži config).
   import { i18n } from '../lib/i18n.svelte.js'
-  import { ROOT_KINDS } from '../lib/settings-schema.js'
+  import FolderPicker from './FolderPicker.svelte'
 
   let { path, meta, value, changed = false, onchange } = $props()
 
@@ -72,6 +72,38 @@
   function addRoot() {
     onchange([...(Array.isArray(value) ? value : []), { label: '', path: '', kind: 'video' }])
   }
+
+  /// Biranje mape kroz sustav: -1 zatvoreno, -2 nova mapa, inače indeks retka.
+  let pickFor = $state(-1)
+
+  /// Ime mape iz putanje ("/home/vaha/Filmovi" → "Filmovi").
+  function folderName(path) {
+    const parts = String(path).split(/[/\\]/).filter(Boolean)
+    return parts.length ? parts[parts.length - 1] : ''
+  }
+
+  function startPicking(index) {
+    pickFor = index
+  }
+
+  function picked(path) {
+    if (pickFor === -2) {
+      onchange([
+        ...(Array.isArray(value) ? value : []),
+        { label: folderName(path), path, kind: 'video' },
+      ])
+    } else if (pickFor >= 0) {
+      setRoot(pickFor, 'path', path)
+      const current = (Array.isArray(value) ? value : [])[pickFor]
+      if (!current?.label?.trim()) setRoot(pickFor, 'label', folderName(path))
+    }
+    pickFor = -1
+  }
+
+  /// Putanja od koje preglednik kreće: postojeći unos ili početna mapa.
+  const pickStart = $derived(
+    pickFor >= 0 && Array.isArray(value) ? (value[pickFor]?.path ?? '') : '',
+  )
 </script>
 
 <div class="field" class:changed data-field={path}>
@@ -154,16 +186,32 @@
           <div class="root-row">
             <input class="input" placeholder={lang === 'en' ? 'label' : 'naziv'} value={root.label ?? ''} onchange={(event) => setRoot(index, 'label', event.currentTarget.value)} />
             <input class="input mono" placeholder="/putanja/do/mape" value={root.path ?? ''} onchange={(event) => setRoot(index, 'path', event.currentTarget.value)} />
-            <select class="select" value={root.kind ?? 'video'} onchange={(event) => setRoot(index, 'kind', event.currentTarget.value)}>
-              {#each ROOT_KINDS as kind}
-                <option value={kind.id}>{text(kind.label)}</option>
-              {/each}
-            </select>
+            <button
+              class="btn"
+              type="button"
+              title={lang === 'en' ? 'Browse folders on the server' : 'Pretraži mape na serveru'}
+              onclick={() => startPicking(index)}
+            >🗀 {lang === 'en' ? 'Browse' : 'Odaberi'}</button>
             <button class="btn ghost danger" type="button" title={lang === 'en' ? 'Remove' : 'Ukloni mapu'} onclick={() => removeRoot(index)}>✕</button>
           </div>
         {/each}
-        <div><button class="btn sm" type="button" onclick={addRoot}>+ {lang === 'en' ? 'Add folder' : 'Dodaj mapu'}</button></div>
+        <div class="roots-actions">
+          <button class="btn primary sm" type="button" onclick={() => startPicking(-2)}>
+            + {lang === 'en' ? 'Add video folder' : 'Dodaj mapu s videom'}
+          </button>
+          <button class="btn ghost sm" type="button" title={lang === 'en' ? 'Add row manually' : 'Dodaj redak ručno'} onclick={addRoot}>
+            {lang === 'en' ? 'Type path manually' : 'Upiši putanju ručno'}
+          </button>
+        </div>
       </div>
+
+      <FolderPicker
+        open={pickFor !== -1}
+        start={pickStart}
+        {lang}
+        onpick={picked}
+        onclose={() => (pickFor = -1)}
+      />
 
     {:else if type === 'json'}
       <textarea class="textarea mono" rows="6" bind:value={jsonText} onblur={commitJson}></textarea>

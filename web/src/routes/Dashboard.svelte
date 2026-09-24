@@ -2,18 +2,56 @@
   // Pregled: računalo, strimovi, knjižnica, posteri, diskovi, uređaji, prekodiranje, zapisnik.
   // Kartice se povlače, mijenjaju širinu i skupljaju (lib/layout.svelte.js).
   import { i18n } from '../lib/i18n.svelte.js'
-  import { store, refreshPosters } from '../lib/store.svelte.js'
+  import { store, refreshPosters, saveSettings, restartServer, toast } from '../lib/store.svelte.js'
   import { get } from '../lib/api.js'
   import { cardOf, resetLayout } from '../lib/layout.svelte.js'
   import { bytes, percent, uptime, bitrate, barClass, ago, duration } from '../lib/format.js'
   import Card from '../components/Card.svelte'
   import Spark from '../components/Spark.svelte'
+  import FolderPicker from '../components/FolderPicker.svelte'
 
   let { onopen } = $props()
 
   let posters = $state(null)
+  let picking = $state(false)
+  let saving = $state('')
   const lang = $derived(i18n.lang === 'en' ? 'en' : 'hr')
   const hr = $derived(lang === 'hr')
+
+  /// Dodaj mapu s videom izravno s pregleda: spremi i, ako treba, restartaj.
+  async function addFolder(path) {
+    picking = false
+    saving = path
+    try {
+      const config = await get('/api/settings')
+      const roots = Array.isArray(config?.library?.roots) ? config.library.roots : []
+      const name = String(path).split(/[/\\]/).filter(Boolean).pop() ?? path
+      if (roots.some((root) => root.path === path)) {
+        saving = ''
+        return
+      }
+      config.library.roots = [...roots, { label: name, path, kind: 'video' }]
+      const result = await saveSettings(config)
+      if (result?.restart_potreban) await restartServer()
+    } catch (error) {
+      toast('err', String(error?.message ?? error))
+    } finally {
+      saving = ''
+    }
+  }
+
+  /// Ukloni mapu koje više nema na disku.
+  async function dropFolder(path) {
+    try {
+      const config = await get('/api/settings')
+      const roots = Array.isArray(config?.library?.roots) ? config.library.roots : []
+      config.library.roots = roots.filter((root) => root.path !== path)
+      const result = await saveSettings(config)
+      if (result?.restart_potreban) await restartServer()
+    } catch (error) {
+      toast('err', String(error?.message ?? error))
+    }
+  }
 
   async function loadPosters() {
     try {
@@ -145,11 +183,27 @@
     {#each status?.roots ?? [] as root}
       <div class="row tight">
         <span class="grow small">{root.label || root.path}</span>
+        {#if !root.exists}
+          <button
+            class="btn ghost danger sm"
+            type="button"
+            title={hr ? 'Ukloni mapu koje nema na disku' : 'Remove a folder that is gone'}
+            onclick={() => dropFolder(root.path)}
+          >✕</button>
+        {/if}
         <span class="badge tiny" class:ok={root.exists} class:err={!root.exists}>{root.exists ? '✓' : (hr ? 'nema mape' : 'missing')}</span>
       </div>
     {:else}
       <div class="empty">{hr ? 'Nijedna mapa nije zadana.' : 'No folder configured.'}</div>
     {/each}
+    <div class="row tight">
+      <button class="btn primary sm" type="button" disabled={!!saving} onclick={() => (picking = true)}>
+        + {hr ? 'Dodaj mapu s videom' : 'Add video folder'}
+      </button>
+      {#if saving}<span class="grow small dim">{hr ? 'spremam i restartam…' : 'saving and restarting…'}</span>{/if}
+    </div>
+
+    <FolderPicker open={picking} {lang} onpick={addFolder} onclose={() => (picking = false)} />
     <div class="row tight">
       <span class="grow small dim">{hr ? 'Virtualne mape' : 'Virtual folders'}</span>
       <span class="badge" class:ok={status?.views}>{status?.views ? (hr ? 'uključene' : 'on') : (hr ? 'isključene' : 'off')}</span>

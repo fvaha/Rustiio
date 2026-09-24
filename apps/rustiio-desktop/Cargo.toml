@@ -19,6 +19,7 @@ rustiio-server = { path = "../../crates/rustiio-server" }
 anyhow = "1"
 tauri = { version = "2", features = [] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

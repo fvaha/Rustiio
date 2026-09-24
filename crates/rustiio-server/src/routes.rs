@@ -61,6 +61,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/posters", get(api_posters))
         .route("/api/posters/refresh", post(api_posters_refresh))
         .merge(crate::api::browse::routes())
+        .merge(crate::api::fs::routes())
         .merge(crate::api::stats::routes())
         .merge(crate::api::logs::routes())
         .merge(crate::api::settings::routes())
