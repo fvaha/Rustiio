@@ -63,8 +63,10 @@ pub fn execute(config_path: PathBuf) -> anyhow::Result<()> {
     }
 
     // 5. ffmpeg / ffprobe (potrebni tek u Fazi 2, ali bolje znati odmah)
+    // Pozor: ffmpeg prima `-version` (jedna crtica) — `--version` vraća exit 8,
+    // pa je ispravan ffmpeg izgledao pokvaren.
     println!("\n  vanjski alati:");
-    check_tool(&config.transcode.ffmpeg_path, "--version");
+    check_tool(&config.transcode.ffmpeg_path, "-version");
     check_tool(&config.transcode.ffprobe_path, "-version");
     println!(
         "\n  transcode:     {} (hw accel: {})",
