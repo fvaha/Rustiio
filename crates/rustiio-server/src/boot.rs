@@ -106,6 +106,10 @@ pub async fn boot(config_path: PathBuf, options: BootOptions) -> anyhow::Result<
     let mut config = Config::load_or_create(&config_path).context("ucitavanje configa")?;
     let identity = DeviceIdentity::ensure(&mut config, &config_path)?;
     let ip = resolve_ip(&config)?;
+    // Snimak **s diska** neposredno prije razrješavanja alata: po njemu sučelje
+    // računa „čeka restart". Bez toga razriješena putanja ffmpeg-a vječno
+    // izgleda kao promjena koju je korisnik napravio.
+    let boot_config = config.clone();
     // Prvo alati: prilozeni uz binarni fajl imaju prednost pred PATH-om.
     let (ffmpeg, ffprobe) = config.resolve_tools();
     tracing::debug!(%ffmpeg, %ffprobe, "alati razrijeseni");
@@ -143,6 +147,7 @@ pub async fn boot(config_path: PathBuf, options: BootOptions) -> anyhow::Result<
         profiles,
     )
     .with_profiles_dir(profiles_dir)
+    .with_boot_config(boot_config)
     .with_store(open_store(&config_path)?)
     .with_config_path(config_path.clone())
     // Poster kes ide uz config (`<config_dir>/art`), a kljuc (ako ga ima) iz okoline.

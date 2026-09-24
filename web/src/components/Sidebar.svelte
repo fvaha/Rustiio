@@ -31,14 +31,14 @@
   <div class="foot">
     <div class="row tight">
       <span class="dot" class:off={!online} class:live={online}></span>
-      <span class="grow small dim">{online ? (i18n.lang === 'en' ? 'live log connected' : 'živi zapisnik spojen') : (i18n.lang === 'en' ? 'log disconnected' : 'zapisnik nije spojen')}</span>
+      <span class="grow small dim">{online ? (t('side.live_log_connected')) : (t('side.log_disconnected'))}</span>
     </div>
     <div class="row tight">
       <span class="small dim">{t('common.uptime')}</span>
       <span class="grow right small num">{uptime(store.status?.uptime_secs)}</span>
     </div>
     <div class="row tight">
-      <span class="small dim">{i18n.lang === 'en' ? 'items' : 'stavki'}</span>
+      <span class="small dim">{t('side.items')}</span>
       <span class="grow right small num">{store.status?.items ?? '—'}</span>
     </div>
 

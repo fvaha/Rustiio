@@ -1,12 +1,12 @@
 <script>
   // Jedno polje configa: nacrtaj kontrolu prema opisu iz settings-schema.js.
   // Vrijednost se mijenja samo kroz onchange (roditelj drži config).
-  import { i18n } from '../lib/i18n.svelte.js'
+  import { t, i18n } from '../lib/i18n.svelte.js'
   import FolderPicker from './FolderPicker.svelte'
 
   let { path, meta, value, changed = false, onchange } = $props()
 
-  const lang = $derived(i18n.lang === 'en' ? 'en' : 'hr')
+  const lang = $derived(t('field.en'))
   const text = (item) => (item && typeof item === 'object' ? (item[lang] ?? item.hr ?? '') : (item ?? ''))
   const type = $derived(meta.type)
   const label = $derived(text(meta.label))

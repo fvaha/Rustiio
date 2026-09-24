@@ -40,6 +40,41 @@ function load() {
 
 export const layout = $state({ cards: load(), dragging: null })
 
+/// Broj stupaca mreže u ovom trenutku — ista mjesta prijelaza kao u `app.css`.
+/// Bez ovoga kartica sa spremljenih 8 stupaca na uskom ekranu (6 stupaca)
+/// prelijeva red i raspored izgleda razbacano.
+export const grid = $state({ columns: 12 })
+
+const BREAKPOINTS = [
+  { query: '(max-width: 640px)', columns: 1 },
+  { query: '(max-width: 1000px)', columns: 6 },
+]
+
+function measure() {
+  if (typeof window === 'undefined') return
+  const hit = BREAKPOINTS.find((bp) => window.matchMedia(bp.query).matches)
+  grid.columns = hit ? hit.columns : 12
+}
+
+measure()
+if (typeof window !== 'undefined') {
+  for (const bp of BREAKPOINTS) {
+    window.matchMedia(bp.query).addEventListener('change', measure)
+  }
+}
+
+/// Širina u stupcima **trenutne** mreže (spremljeno je uvijek u 12 stupaca).
+export function effectiveSpan(rawSpan) {
+  const raw = rawSpan ?? 4
+  if (grid.columns >= 12) return raw
+  return Math.max(1, Math.min(grid.columns, Math.round((raw * grid.columns) / 12)))
+}
+
+/// Jedan vizualni korak povlačenja, u 12-stupčanim jedinicama.
+export function stepUnits() {
+  return Math.max(1, Math.round(12 / grid.columns))
+}
+
 function persist() {
   try {
     localStorage.setItem(KEY, JSON.stringify(layout.cards.map(({ id, span, collapsed }) => ({ id, span, collapsed }))))

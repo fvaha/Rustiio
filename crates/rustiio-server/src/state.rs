@@ -1,8 +1,9 @@
 //! Dijeljeno stanje servera.
 
 use std::collections::HashSet;
+// Za kratke, sinkrone sekcije (jezik sučelja) — tokijev RwLock traži `.await`.
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock as SyncRwLock};
 use std::time::{Duration, Instant};
 
 use rustiio_core::DeviceIdentity;
@@ -43,15 +44,47 @@ pub struct AppState {
     pub enricher: Arc<Enricher>,
     /// Putanja `config.toml` (web sučelje ga čita i piše).
     pub config_path: Arc<PathBuf>,
+    /// Jezik sučelja **u radu**. `ui.*` se primjenjuje bez restarta, pa ovo mora
+    /// živjeti odvojeno od `config` (koji je `Arc` i ne mijenja se u hodu).
+    /// Bez toga `/api/status` vraća stari jezik i sučelje se pri osvježavanju vrati na njega.
+    pub ui_language: Arc<SyncRwLock<String>>,
+    /// Config **kakav je bio na disku pri dizanju procesa**, prije nego su
+    /// priloženi alati razriješeni u prave putanje (`resolve_tools`). Po njemu
+    /// `/api/settings` računa „čeka restart" — inače razriješeni `/usr/local/bin/ffmpeg`
+    /// u radu vječno izgleda kao promjena koju je korisnik napravio.
+    pub boot_config: Arc<Config>,
+
     /// Mapa s korisnickim profilima.
     profiles_dir: Arc<PathBuf>,
     started: Instant,
 }
 
 impl AppState {
+    /// Jezik sučelja u radu (čita ga `/api/status`, a PUT ga mijenja bez restarta).
+    pub fn ui_language(&self) -> String {
+        self.ui_language
+            .read()
+            .map(|language| language.clone())
+            .unwrap_or_else(|_| self.config.ui.language.clone())
+    }
+
+    /// Primijeni `ui.*` bez restarta — zove `PUT /api/settings` nakon spremanja.
+    pub fn set_ui_language(&self, language: &str) {
+        if let Ok(mut current) = self.ui_language.write() {
+            *current = language.to_string();
+        }
+    }
+
     /// Isti kao [`AppState::new`], ali s izricitom mapom profila.
     pub fn with_profiles_dir(mut self, dir: PathBuf) -> Self {
         self.profiles_dir = Arc::new(dir);
+        self
+    }
+
+    /// Config s diska kakav je bio **pri dizanju** (prije razrješavanja alata) —
+    /// osnova za „čeka restart" u sučelju.
+    pub fn with_boot_config(mut self, config: Config) -> Self {
+        self.boot_config = Arc::new(config);
         self
     }
 
@@ -121,6 +154,8 @@ impl AppState {
         ));
 
         Self {
+            ui_language: Arc::new(SyncRwLock::new(config.ui.language.clone())),
+            boot_config: Arc::clone(&config),
             config,
             identity,
             base_url: Arc::new(base_url),

@@ -1152,7 +1152,7 @@ async fn api_status(State(state): State<AppState>) -> Response {
             "devices": state.capture.len(),
         },
         "views": state.config.library.views,
-        "ui_language": state.config.ui.language,
+        "ui_language": state.ui_language(),
         "uptime_secs": state.uptime_secs(),
         "update_id": catalog.update_id,
         "items": catalog.len(),

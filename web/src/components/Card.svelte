@@ -1,9 +1,12 @@
 <script>
   // Bento kartica: povlačenje za redoslijed, povlačenje donjeg ruba za širinu,
   // skupljanje klikom. Sve tri stvari se pamte (vidi lib/layout.svelte.js).
-  import { layout, move, setSpan, toggleCollapse } from '../lib/layout.svelte.js'
+  import { layout, move, setSpan, toggleCollapse, grid, effectiveSpan, stepUnits } from '../lib/layout.svelte.js'
 
   let { id, title, span = 4, collapsed = false, children, actions } = $props()
+
+  /// Širina u stupcima **trenutne** mreže (spremljeno je u 12 stupaca).
+  const width = $derived(effectiveSpan(span))
 
   let resizing = $state(false)
   let over = $state(false)
@@ -27,25 +30,26 @@
     layout.dragging = null
   }
 
-  /// Povlačenje donjeg ruba mijenja širinu u stupcima mreže (12 stupaca).
+  /// Povlačenje donjeg ruba mijenja širinu u stupcima **trenutne** mreže.
   function startResize(event) {
     event.preventDefault()
     event.stopPropagation()
-    const grid = event.currentTarget.closest('.bento')
-    if (!grid) return
-    const columns = 12
-    const styles = getComputedStyle(grid)
+    const box = event.currentTarget.closest('.bento')
+    if (!box) return
+    const columns = grid.columns
+    const styles = getComputedStyle(box)
     const gap = parseFloat(styles.columnGap) || 0
-    const width = grid.getBoundingClientRect().width
-    const columnWidth = (width - gap * (columns - 1)) / columns
+    const total = box.getBoundingClientRect().width
+    const columnWidth = (total - gap * (columns - 1)) / columns
     const startX = event.clientX
     const startSpan = span
+    const units = stepUnits()
     resizing = true
 
     const onMove = (moveEvent) => {
       const delta = moveEvent.clientX - startX
       const steps = Math.round(delta / (columnWidth + gap))
-      setSpan(id, startSpan + steps)
+      setSpan(id, startSpan + steps * units)
     }
     const onUp = () => {
       resizing = false
@@ -64,7 +68,7 @@
   class:dragging={layout.dragging === id}
   class:over
   class:collapsed
-  style="--span: {span}"
+  style="--span: {width}"
   draggable="true"
   ondragstart={onDragStart}
   ondragover={onDragOver}

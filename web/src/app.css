@@ -187,11 +187,16 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.02em; font-weight: 620; }
 
 /* ------------------------------------------------------------------ kartice */
 
-.grid, .bento { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.grid, .bento {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px;
+  /* Kartice u istom redu iste visine i pune se praznine — bez toga rubovi "šetaju". */
+  align-items: stretch; grid-auto-flow: row dense;
+}
 
 .card {
   grid-column: span var(--span, 4);
   min-width: 0; overflow: hidden;
+  display: flex; flex-direction: column; height: 100%;
   background: linear-gradient(180deg, var(--surface-2), var(--surface));
   border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow-1);
@@ -210,7 +215,7 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.02em; font-weight: 620; }
   text-transform: uppercase; color: var(--faint);
 }
 .card-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
-.card-body { padding: 12px 16px 16px; }
+.card-body { padding: 12px 16px 16px; flex: 1 1 auto; min-height: 0; }
 
 .grip { color: var(--line-2); font-size: 12px; letter-spacing: -1px; user-select: none; }
 .card:hover .grip { color: var(--dim); }
@@ -350,6 +355,8 @@ table.tbl td.n, table.tbl th.n { text-align: right; font-variant-numeric: tabula
 
 .settings { display: grid; grid-template-columns: 198px minmax(0, 1fr); gap: 26px; align-items: start; }
 .settings-nav { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 2px; }
+/* Skok na sekciju iz navigacije: naslov sekcije ne smije završiti pod ljepljivim zaglavljem. */
+.settings section.panel { scroll-margin-top: 84px; }
 .settings-nav a {
   color: var(--dim); font-size: 13.5px; padding: 7px 10px; border-radius: var(--radius-xs);
   display: flex; justify-content: space-between; gap: 8px;
@@ -437,14 +444,13 @@ table.tbl td.n, table.tbl th.n { text-align: right; font-variant-numeric: tabula
   .settings { grid-template-columns: 1fr; }
   .settings-nav { display: none; }
   .grid, .bento { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .card { grid-column: span min(var(--span, 4), 6); }
+  /* Raspone preračunava lib/layout.svelte.js (effectiveSpan) — jedno mjesto istine. */
 }
 
 @media (max-width: 640px) {
   .page { padding: 16px 13px 64px; }
   .topbar { padding: 10px 13px; gap: 8px; }
   .grid, .bento { grid-template-columns: 1fr; }
-  .card { grid-column: span 1; }
   .field { grid-template-columns: 1fr; gap: 6px; padding: 11px 0; }
   .field > .label { padding-top: 0; }
   .root-row { grid-template-columns: 1fr; }

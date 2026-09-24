@@ -30,7 +30,9 @@ async fn api_get(State(state): State<AppState>) -> impl IntoResponse {
     // Datoteka je izvor istine: netko je mogao spremiti iz sučelja ili ručno, a
     // proces još radi po starom. Razlika se pošteno prijavi, ne prešućuje.
     let file = Config::load(&state.config_path).unwrap_or_else(|_| state.config.as_ref().clone());
-    let pending = diff_paths(state.config.as_ref(), &file);
+    // Usporedba ide s configom **kakav je bio pri dizanju** (bez razriješenih
+    // putanja alata): inače bi `transcode.ffmpeg_path` vječno čekao restart.
+    let pending = diff_paths(state.boot_config.as_ref(), &file);
     let config = serde_json::to_value(&file).unwrap_or(Value::Null);
     axum::Json(json!({
         "config": config,
@@ -52,9 +54,16 @@ async fn api_put(State(state): State<AppState>, body: String) -> impl IntoRespon
         return fail(StatusCode::BAD_REQUEST, problem);
     }
 
-    let changed = diff_paths(state.config.as_ref(), &incoming);
+    // Razlika prema configu **s dizanja** (ne prema razriješenim putanjama u radu).
+    let changed = diff_paths(state.boot_config.as_ref(), &incoming);
     if let Err(error) = incoming.save(&state.config_path) {
         return fail(StatusCode::INTERNAL_SERVER_ERROR, format!("ne mogu spremiti config: {error}"));
+    }
+    // `ui.*` vrijedi odmah (bez restarta) — pa se mora primijeniti i u radu.
+    // Uvjet ide prema **stanju u radu**, ne prema razlici s dizanja: inače povratak
+    // na jezik s kojim je proces dignut ne promijeni ništa (razlika je prazna).
+    if incoming.ui.language != state.ui_language() {
+        state.set_ui_language(&incoming.ui.language);
     }
 
     let restart = changed.iter().any(|path| needs_restart(path));
@@ -191,6 +200,24 @@ mod tests {
         let mut broken = config();
         broken.server.udn = Some("  ".into());
         assert!(validate(&broken).is_err());
+    }
+
+    #[test]
+    fn resolving_tools_does_not_look_like_a_pending_change() {
+        // Box je javljao „čeka restart: transcode.ffmpeg_path, transcode.ffprobe_path"
+        // iako korisnik ništa nije mijenjao: `resolve_tools` u radu prepiše putanje
+        // u prave (`/usr/local/bin/ffmpeg`), pa se razlika prema datoteci nikad ne zatvori.
+        // Sučelje zato uspoređuje config s onim **s dizanja**.
+        let on_disk = config();
+        let snapshot = on_disk.clone();
+        // Kao na boxu: `resolve_tools` u radu prepiše putanju u pravu.
+        let mut running = on_disk.clone();
+        running.transcode.ffmpeg_path = "/usr/local/bin/ffmpeg".into();
+        assert!(diff_paths(&snapshot, &on_disk).is_empty(), "snimak s diska ne smije čekati restart");
+        assert!(
+            !diff_paths(&running, &on_disk).is_empty(),
+            "ovako je izgledalo prije popravka — proces u radu 'razlikuje se' od datoteke"
+        );
     }
 
     #[test]

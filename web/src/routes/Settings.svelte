@@ -2,7 +2,7 @@
   // Postavke: **sva** polja configa, po sekcijama, s objašnjenjem i spremljenim stanjem.
   // Polja su opisana u lib/settings-schema.js — novo polje u configu se pojavi samo.
   import { onMount } from 'svelte'
-  import { i18n } from '../lib/i18n.svelte.js'
+  import { t, i18n } from '../lib/i18n.svelte.js'
   import { get, put, post } from '../lib/api.js'
   import { toast, refreshStatus } from '../lib/store.svelte.js'
   import { SECTIONS, fieldsOf, getPath, setPath, metaOf } from '../lib/settings-schema.js'
@@ -19,7 +19,7 @@
   let rawError = $state('')
 
   const hr = $derived(i18n.lang !== 'en')
-  const text = (item) => (item && typeof item === 'object' ? (item[hr ? 'hr' : 'en'] ?? item.hr ?? '') : (item ?? ''))
+  const text = (item) => (item && typeof item === 'object' ? (item[t('field.en')] ?? item.hr ?? '') : (item ?? ''))
 
   /// Sva polja koja se razlikuju od spremljenog stanja (ista logika kao na serveru).
   const changed = $derived.by(() => diff(original, config))
@@ -61,7 +61,7 @@
       rawText = JSON.stringify(data.config, null, 2)
       problem = ''
     } catch (error) {
-      problem = `${hr ? 'Ne mogu pročitati postavke' : 'Cannot read settings'}: ${error.message}`
+      problem = `${t('set.cannot_read_settings')}: ${error.message}`
       toast('err', problem)
     }
   }
@@ -89,23 +89,23 @@
       const count = result?.promijenjena?.length ?? 0
       toast('ok', hr ? `Spremljeno (${count} ${count === 1 ? 'polje' : 'polja'})` : `Saved (${count} fields)`)
       if (result?.restart_potreban) {
-        toast('warn', hr ? 'Neka polja vrijede tek nakon restarta servisa.' : 'Some fields apply only after a service restart.', 9000)
+        toast('warn', t('set.some_fields_apply_only_after_a_service_res'), 9000)
       }
       rawText = JSON.stringify(config, null, 2)
       await refreshStatus()
     } catch (error) {
       problem = error.message
-      toast('err', `${hr ? 'Nije spremljeno' : 'Not saved'}: ${error.message}`, 12000)
+      toast('err', `${t('set.not_saved')}: ${error.message}`, 12000)
     } finally {
       saving = false
     }
   }
 
   async function restartService() {
-    if (!confirm(hr ? 'Restartati servis sada? Strimovi će se prekinuti.' : 'Restart the service now? Streams will drop.')) return
+    if (!confirm(t('set.restart_the_service_now_streams_will_drop'))) return
     try {
       await post('/api/restart')
-      toast('warn', hr ? 'Servis se diže… stranica će se osvježiti.' : 'Service is coming back… page will reload.', 8000)
+      toast('warn', t('set.service_is_coming_back_page_will_reload'), 8000)
       setTimeout(() => location.reload(), 6000)
     } catch (error) {
       toast('err', error.message)
@@ -117,11 +117,20 @@
       const parsed = JSON.parse(rawText)
       config = parsed
       rawError = ''
-      toast('ok', hr ? 'Config pročitan iz JSON-a — provjeri i spremi.' : 'Config parsed from JSON — review and save.')
+      toast('ok', t('set.config_parsed_from_json_review_and_save'))
     } catch (error) {
       rawError = error.message
-      toast('err', `${hr ? 'JSON nije ispravan' : 'Invalid JSON'}: ${error.message}`)
+      toast('err', `${t('set.invalid_json')}: ${error.message}`)
     }
+  }
+
+  /// Skok na sekciju: mijenja se **samo pomicanje**, ne adresa.
+  /// (Adresa `#server` bi routeru izgledala kao nepoznata ruta i vratila Overview.)
+  function jump(key, event) {
+    event?.preventDefault()
+    const target = document.getElementById(key)
+    if (!target) return
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   const counts = $derived(
@@ -130,21 +139,21 @@
 </script>
 
 <div class="settings">
-  <nav class="settings-nav" aria-label={hr ? 'Sekcije postavki' : 'Settings sections'}>
+  <nav class="settings-nav" aria-label={t('set.settings_sections')}>
     {#each SECTIONS as section}
-      <a href="#{section.key}">
+      <a href="#{section.key}" onclick={(event) => jump(section.key, event)}>
         <span>{text(section.title)}</span>
         <span class="n">{counts[section.key] ?? 0}</span>
       </a>
     {/each}
-    <a href="#napredno"><span>{hr ? 'Napredno' : 'Advanced'}</span><span class="n">JSON</span></a>
+    <a href="#napredno" onclick={(event) => jump('napredno', event)}><span>{t('set.advanced')}</span><span class="n">JSON</span></a>
   </nav>
 
   <div>
     {#if problem}
       <div class="panel" style="border-color: rgba(251, 113, 133, 0.5); margin-bottom: 16px">
         <div class="panel-body" style="padding-top: 14px">
-          <strong style="color: var(--err)">{hr ? 'Greška' : 'Error'}:</strong> {problem}
+          <strong style="color: var(--err)">{t('set.error')}:</strong> {problem}
         </div>
       </div>
     {/if}
@@ -152,12 +161,12 @@
     {#if pendingRestart.length}
       <div class="panel" style="border-color: rgba(251, 191, 36, 0.45); margin-bottom: 16px">
         <div class="panel-body" style="padding-top: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
-          <span class="badge warn"><span class="dot"></span>{hr ? 'čeka restart' : 'restart pending'}</span>
+          <span class="badge warn"><span class="dot"></span>{t('set.restart_pending')}</span>
           <span class="grow small dim">
-            {hr ? 'Ova polja su spremljena, ali vrijede tek kad se servis digne:' : 'These fields are saved but take effect only after a restart:'}
+            {t('set.these_fields_are_saved_but_take_effect_onl')}
             <span class="mono">{pendingRestart.join(', ')}</span>
           </span>
-          <button class="btn primary" onclick={restartService}>{hr ? 'Restartaj servis' : 'Restart service'}</button>
+          <button class="btn primary" onclick={restartService}>{t('set.restart_service')}</button>
         </div>
       </div>
     {/if}
@@ -190,16 +199,16 @@
 
       <section class="panel" id="napredno">
         <div class="panel-head">
-          <h2><span aria-hidden="true">⌘</span> {hr ? 'Napredno' : 'Advanced'}</h2>
+          <h2><span aria-hidden="true">⌘</span> {t('set.advanced')}</h2>
           <p>
-            {hr ? 'Cijeli config kao JSON. Koristi kad nešto nije u obrascu — i za kopiranje postavki na drugi server.' : 'The whole config as JSON. Use it for anything not in the form — and to copy settings to another server.'}
+            {t('set.the_whole_config_as_json_use_it_for_anythi')}
           </p>
         </div>
         <div class="panel-body">
           <div class="row tight">
             <span class="grow small faint mono">{path}</span>
-            <button class="btn sm" onclick={() => (rawOpen = !rawOpen)}>{rawOpen ? (hr ? 'Sakrij' : 'Hide') : (hr ? 'Prikaži' : 'Show')}</button>
-            <button class="btn sm" onclick={applyRaw} disabled={!rawOpen}>{hr ? 'Primijeni' : 'Apply'}</button>
+            <button class="btn sm" onclick={() => (rawOpen = !rawOpen)}>{rawOpen ? (t('set.hide')) : (t('set.show'))}</button>
+            <button class="btn sm" onclick={applyRaw} disabled={!rawOpen}>{t('set.apply')}</button>
           </div>
           {#if rawOpen}
             <textarea class="textarea mono" rows="18" bind:value={rawText} spellcheck="false"></textarea>
@@ -212,7 +221,7 @@
         <span class="badge" class:info={changed.length > 0} class:ok={changed.length === 0}>
           {changed.length > 0
             ? `${changed.length} ${hr ? (changed.length === 1 ? 'promjena' : 'promjena') : 'changed'}`
-            : hr ? 'sve spremljeno' : 'all saved'}
+            : t('set.all_saved')}
         </span>
         {#if changed.length > 0}
           <span class="small faint mono hide-sm" style="max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">
@@ -221,11 +230,11 @@
         {/if}
         <span class="spacer"></span>
         {#if restartFields.length > 0 && changed.length === 0}
-          <span class="badge warn">{hr ? 'restart čeka' : 'restart pending'}</span>
+          <span class="badge warn">{t('set.restart_pending_2')}</span>
         {/if}
-        <button class="btn" onclick={reset} disabled={changed.length === 0}>{hr ? 'Vrati' : 'Revert'}</button>
+        <button class="btn" onclick={reset} disabled={changed.length === 0}>{t('set.revert')}</button>
         <button class="btn primary" onclick={save} disabled={saving || changed.length === 0}>
-          {saving ? (hr ? 'Spremam…' : 'Saving…') : (hr ? 'Spremi postavke' : 'Save settings')}
+          {saving ? (t('set.saving')) : (t('set.save_settings'))}
         </button>
       </div>
     {/if}

@@ -1,7 +1,7 @@
 <script>
   // Pregled: računalo, strimovi, knjižnica, posteri, diskovi, uređaji, prekodiranje, zapisnik.
   // Kartice se povlače, mijenjaju širinu i skupljaju (lib/layout.svelte.js).
-  import { i18n } from '../lib/i18n.svelte.js'
+  import { t, i18n } from '../lib/i18n.svelte.js'
   import { store, refreshPosters, saveSettings, toast } from '../lib/store.svelte.js'
   import { get } from '../lib/api.js'
   import { cardOf, resetLayout } from '../lib/layout.svelte.js'
@@ -15,7 +15,8 @@
   let posters = $state(null)
   let picking = $state(false)
   let saving = $state('')
-  const lang = $derived(i18n.lang === 'en' ? 'en' : 'hr')
+  // Jezik sučelja dolazi iz zajedničkog stanja (i18n.lang je 'hr' ili 'en').
+  const lang = $derived(i18n.lang)
   const hr = $derived(lang === 'hr')
 
   /// Dodaj mapu s videom izravno s pregleda: spremi i, ako treba, restartaj.
@@ -37,7 +38,7 @@
       // Ne restartaj sam: u desktop aplikaciji bi to ugasilo i prozor, a na
       // serveru ovisi o tome kako je usluga postavljena. Reci korisniku što treba.
       if (result?.restart_potreban) {
-        toast('warn', hr ? 'Mape spremljene. Za novu mapu treba ponovno pokretanje: u aplikaciji zatvori i otvori Rustiio, na serveru restartaj uslugu.' : 'Folders saved. A restart is needed: reopen the app, or restart the service on the server.', 12000)
+        toast('warn', t('dash.folders_saved_a_restart_is_needed_reopen_t'), 12000)
       }
     } catch (error) {
       toast('err', String(error?.message ?? error))
@@ -54,7 +55,7 @@
       config.library.roots = roots.filter((root) => root.path !== path)
       const result = await saveSettings(config)
       if (result?.restart_potreban) {
-        toast('warn', hr ? 'Mape spremljene. Za promjenu treba ponovno pokretanje.' : 'Folders saved. A restart is needed.', 12000)
+        toast('warn', t('dash.folders_saved_a_restart_is_needed'), 12000)
       }
     } catch (error) {
       toast('err', String(error?.message ?? error))
@@ -98,24 +99,24 @@
 
 <div class="grid bento">
   <!-- računalo -->
-  <Card id="system" title={hr ? 'Računalo' : 'Machine'} span={spanOf('system', 8)} collapsed={collapsedOf('system')}>
+  <Card id="system" title={t('dash.machine')} span={spanOf('system', 8)} collapsed={collapsedOf('system')}>
     {#snippet actions()}
       <span class="badge">{stats?.cpu?.brand ?? '—'}</span>
-      <span class="badge info">{stats?.cpu?.cores ?? 0} {hr ? 'jezgre' : 'cores'}</span>
+      <span class="badge info">{stats?.cpu?.cores ?? 0} {t('dash.cores')}</span>
     {/snippet}
 
     <div class="metrics">
       <div class="metric accent">
         <b>{percent(stats?.cpu?.usage ?? 0)}</b>
-        <span>{hr ? 'Procesor' : 'CPU'} · {hr ? 'opterećenje' : 'load'} {(stats?.cpu?.load?.[0] ?? 0).toFixed(2)}</span>
+        <span>{t('dash.cpu')} · {t('dash.load')} {(stats?.cpu?.load?.[0] ?? 0).toFixed(2)}</span>
       </div>
       <div class="metric ok">
         <b>{percent(memoryPercent)}</b>
-        <span>{hr ? 'Memorija' : 'Memory'} · {bytes(stats?.memory?.used)} / {bytes(stats?.memory?.total)}</span>
+        <span>{t('dash.memory')} · {bytes(stats?.memory?.used)} / {bytes(stats?.memory?.total)}</span>
       </div>
       <div class="metric">
         <b>{uptime(stats?.uptime_s ?? 0)}</b>
-        <span>{hr ? 'Radi neprekidno' : 'Uptime'}</span>
+        <span>{t('dash.uptime')}</span>
       </div>
       {#if stats?.gpu}
         <div class="metric violet">
@@ -127,11 +128,11 @@
 
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px">
       <div>
-        <div class="tiny faint" style="margin-bottom: 4px">{hr ? 'Procesor — zadnjih minuta' : 'CPU — last minutes'}</div>
+        <div class="tiny faint" style="margin-bottom: 4px">{t('dash.cpu_last_minutes')}</div>
         <Spark values={store.history.cpu} max={100} height={44} id="cpu" color="var(--accent)" />
       </div>
       <div>
-        <div class="tiny faint" style="margin-bottom: 4px">{hr ? 'Memorija — zadnjih minuta' : 'Memory — last minutes'}</div>
+        <div class="tiny faint" style="margin-bottom: 4px">{t('dash.memory_last_minutes')}</div>
         <Spark values={store.history.memory} max={100} height={44} id="ram" color="var(--ok)" />
       </div>
     </div>
@@ -141,20 +142,20 @@
       <span class="badge">{bytes(stats?.process?.memory)} · {percent(stats?.process?.cpu ?? 0, 1)}</span>
     </div>
     <div class="row tight">
-      <span class="grow small dim">{hr ? 'Oglasi i pretplate' : 'Discovery and subscriptions'}</span>
+      <span class="grow small dim">{t('dash.discovery_and_subscriptions')}</span>
       <span class="badge" class:ok={status?.ssdp} class:err={!status?.ssdp}>{status?.ssdp ? 'SSDP ✓' : 'SSDP ✕'}</span>
-      <span class="badge">{status?.subscriptions ?? 0} {hr ? 'pretplata' : 'subscriptions'}</span>
+      <span class="badge">{status?.subscriptions ?? 0} {t('dash.subscriptions')}</span>
     </div>
   </Card>
 
   <!-- strimovi -->
-  <Card id="streams" title={hr ? 'Aktivni strimovi' : 'Active streams'} span={spanOf('streams', 4)} collapsed={collapsedOf('streams')}>
+  <Card id="streams" title={t('dash.active_streams')} span={spanOf('streams', 4)} collapsed={collapsedOf('streams')}>
     {#snippet actions()}
       <span class="badge info">{store.streams?.active ?? 0}/{store.streams?.max_concurrent ?? 0}</span>
     {/snippet}
 
     {#if streamList.length === 0}
-      <div class="empty"><span class="ico">◌</span>{hr ? 'Nijedan televizor trenutačno ne gleda.' : 'No TV is playing right now.'}</div>
+      <div class="empty"><span class="ico">◌</span>{t('dash.no_tv_is_playing_right_now')}</div>
     {:else}
       {#each streamList as stream (stream.id)}
         <div class="row">
@@ -163,7 +164,7 @@
             <div class="sub">{stream.device || '—'} · {streamDuration(stream)}{#if stream.bitrate} · {bitrate(stream.bitrate)}{/if}</div>
           </span>
           <span class="badge" class:info={stream.mode === 'transcode'} class:ok={stream.mode !== 'transcode'}>
-            {stream.mode === 'transcode' ? (hr ? 'Prekodira' : 'Transcode') : (hr ? 'Izravno' : 'Direct')}
+            {stream.mode === 'transcode' ? (t('dash.transcode')) : (t('dash.direct'))}
           </span>
         </div>
         <div class="row tight">
@@ -173,20 +174,20 @@
     {/if}
 
     <div class="row tight" style="margin-top: 8px">
-      <span class="grow small dim">{hr ? 'Slobodnih mjesta' : 'Free slots'}</span>
+      <span class="grow small dim">{t('dash.free_slots')}</span>
       <span class="badge">{store.streams?.available_slots ?? 0}</span>
     </div>
   </Card>
 
   <!-- knjižnica -->
-  <Card id="library" title={hr ? 'Knjižnica' : 'Library'} span={spanOf('library', 4)} collapsed={collapsedOf('library')}>
+  <Card id="library" title={t('dash.library')} span={spanOf('library', 4)} collapsed={collapsedOf('library')}>
     {#snippet actions()}
-      <button class="btn ghost" title={hr ? 'Prikaži popis' : 'Show listing'} onclick={() => onopen?.('library')}>→</button>
+      <button class="btn ghost" title={t('dash.show_listing')} onclick={() => onopen?.('library')}>→</button>
     {/snippet}
     <div class="metrics">
-      <div class="metric"><b>{status?.items ?? 0}</b><span>{hr ? 'objekata' : 'items'}</span></div>
-      <div class="metric"><b>{counts.videos ?? 0}</b><span>{hr ? 'video' : 'video'}</span></div>
-      <div class="metric"><b>{counts.folders ?? 0}</b><span>{hr ? 'mapa' : 'folders'}</span></div>
+      <div class="metric"><b>{status?.items ?? 0}</b><span>{t('dash.items')}</span></div>
+      <div class="metric"><b>{counts.videos ?? 0}</b><span>{t('dash.video')}</span></div>
+      <div class="metric"><b>{counts.folders ?? 0}</b><span>{t('dash.folders')}</span></div>
     </div>
     {#each status?.roots ?? [] as root}
       <div class="row tight">
@@ -195,50 +196,50 @@
           <button
             class="btn ghost danger sm"
             type="button"
-            title={hr ? 'Ukloni mapu koje nema na disku' : 'Remove a folder that is gone'}
+            title={t('dash.remove_a_folder_that_is_gone')}
             onclick={() => dropFolder(root.path)}
           >✕</button>
         {/if}
-        <span class="badge tiny" class:ok={root.exists} class:err={!root.exists}>{root.exists ? '✓' : (hr ? 'nema mape' : 'missing')}</span>
+        <span class="badge tiny" class:ok={root.exists} class:err={!root.exists}>{root.exists ? '✓' : (t('dash.missing'))}</span>
       </div>
     {:else}
-      <div class="empty">{hr ? 'Nijedna mapa nije zadana.' : 'No folder configured.'}</div>
+      <div class="empty">{t('dash.no_folder_configured')}</div>
     {/each}
     <div class="row tight">
       <button class="btn primary sm" type="button" disabled={!!saving} onclick={() => (picking = true)}>
-        + {hr ? 'Dodaj mapu s videom' : 'Add video folder'}
+        + {t('dash.add_video_folder')}
       </button>
-      {#if saving}<span class="grow small dim">{hr ? 'spremam…' : 'saving…'}</span>{/if}
+      {#if saving}<span class="grow small dim">{t('dash.saving')}</span>{/if}
     </div>
 
     <FolderPicker open={picking} {lang} onpick={addFolder} onclose={() => (picking = false)} />
     <div class="row tight">
-      <span class="grow small dim">{hr ? 'Virtualne mape' : 'Virtual folders'}</span>
-      <span class="badge" class:ok={status?.views}>{status?.views ? (hr ? 'uključene' : 'on') : (hr ? 'isključene' : 'off')}</span>
+      <span class="grow small dim">{t('dash.virtual_folders')}</span>
+      <span class="badge" class:ok={status?.views}>{status?.views ? (t('dash.on')) : (t('dash.off'))}</span>
     </div>
   </Card>
 
   <!-- posteri -->
-  <Card id="posters" title={hr ? 'Naslovnice' : 'Posters'} span={spanOf('posters', 4)} collapsed={collapsedOf('posters')}>
+  <Card id="posters" title={t('dash.posters')} span={spanOf('posters', 4)} collapsed={collapsedOf('posters')}>
     {#snippet actions()}
-      <span class="badge" class:ok={posters?.tmdb_key} class:warn={!posters?.tmdb_key}>{posters?.tmdb_key ? 'TMDB' : (hr ? 'bez ključa' : 'no key')}</span>
-      <button class="btn ghost" title={hr ? 'Provjeri sada' : 'Check now'} onclick={refreshPosters}>⟳</button>
+      <span class="badge" class:ok={posters?.tmdb_key} class:warn={!posters?.tmdb_key}>{posters?.tmdb_key ? 'TMDB' : (t('dash.no_key'))}</span>
+      <button class="btn ghost" title={t('dash.check_now')} onclick={refreshPosters}>⟳</button>
     {/snippet}
     <div class="metrics">
-      <div class="metric ok"><b>{posters?.have ?? 0}</b><span>{hr ? 'imaju' : 'have'}</span></div>
-      <div class="metric warn"><b>{posters?.pending ?? 0}</b><span>{hr ? 'čeka' : 'waiting'}</span></div>
-      <div class="metric err"><b>{posters?.none ?? 0}</b><span>{hr ? 'nema' : 'none'}</span></div>
+      <div class="metric ok"><b>{posters?.have ?? 0}</b><span>{t('dash.have')}</span></div>
+      <div class="metric warn"><b>{posters?.pending ?? 0}</b><span>{t('dash.waiting')}</span></div>
+      <div class="metric err"><b>{posters?.none ?? 0}</b><span>{t('dash.none')}</span></div>
     </div>
     <div class="bar lg" style="margin-top: 12px">
       <i class="ok" style="width: {posterPercent}%"></i>
     </div>
     <div class="tiny faint" style="margin-top: 6px">
-      {percent(posterPercent)} {hr ? 'pokrivenosti' : 'coverage'} · {posterTotal} {hr ? 'naslova' : 'titles'}
+      {percent(posterPercent)} {t('dash.coverage')} · {posterTotal} {t('dash.titles')}
     </div>
   </Card>
 
   <!-- diskovi -->
-  <Card id="disks" title={hr ? 'Diskovi' : 'Disks'} span={spanOf('disks', 4)} collapsed={collapsedOf('disks')}>
+  <Card id="disks" title={t('dash.disks')} span={spanOf('disks', 4)} collapsed={collapsedOf('disks')}>
     {#each (stats?.disks ?? []).slice(0, 6) as disk (disk.montirano)}
       <div class="row">
         <span class="grow">
@@ -247,28 +248,28 @@
         </span>
         <span class="right nowrap">
           <div class="small num">{percent(disk.posto)}</div>
-          <div class="tiny faint num">{bytes(disk.slobodno)} {hr ? 'slobodno' : 'free'}</div>
+          <div class="tiny faint num">{bytes(disk.slobodno)} {t('dash.free')}</div>
         </span>
       </div>
     {:else}
-      <div class="empty">{hr ? 'Nema podataka o diskovima.' : 'No disk data.'}</div>
+      <div class="empty">{t('dash.no_disk_data')}</div>
     {/each}
   </Card>
 
   <!-- uređaji -->
-  <Card id="devices" title={hr ? 'Uređaji' : 'Devices'} span={spanOf('devices', 6)} collapsed={collapsedOf('devices')}>
+  <Card id="devices" title={t('dash.devices')} span={spanOf('devices', 6)} collapsed={collapsedOf('devices')}>
     {#snippet actions()}
       <span class="badge">{store.devices?.count ?? 0}</span>
-      <button class="btn ghost" title={hr ? 'Svi uređaji' : 'All devices'} onclick={() => onopen?.('devices')}>→</button>
+      <button class="btn ghost" title={t('dash.all_devices')} onclick={() => onopen?.('devices')}>→</button>
     {/snippet}
     {#if deviceList.length === 0}
-      <div class="empty"><span class="ico">◌</span>{hr ? 'Još se nijedan uređaj nije javio.' : 'No device has connected yet.'}</div>
+      <div class="empty"><span class="ico">◌</span>{t('dash.no_device_has_connected_yet')}</div>
     {:else}
       {#each deviceList as device (device.key)}
         <div class="row">
           <span class="grow">
             <div class="name">{device.friendly_name || device.user_agent || device.ip}</div>
-            <div class="sub mono">{device.ip} · {device.requests} {hr ? 'zahtjeva' : 'requests'} · {ago(device.last_seen * 1000)}</div>
+            <div class="sub mono">{device.ip} · {device.requests} {t('dash.requests')} · {ago(device.last_seen * 1000)}</div>
           </span>
           <span class="badge violet">{device.profile}</span>
         </div>
@@ -277,42 +278,42 @@
   </Card>
 
   <!-- prekodiranje -->
-  <Card id="transcode" title={hr ? 'Prekodiranje' : 'Transcoding'} span={spanOf('transcode', 6)} collapsed={collapsedOf('transcode')}>
+  <Card id="transcode" title={t('dash.transcoding')} span={spanOf('transcode', 6)} collapsed={collapsedOf('transcode')}>
     {#snippet actions()}
       <span class="badge" class:ok={status?.transcode_enabled} class:err={!status?.transcode_enabled}>
-        {status?.transcode_enabled ? (hr ? 'uključeno' : 'on') : (hr ? 'isključeno' : 'off')}
+        {status?.transcode_enabled ? (t('dash.on_2')) : (t('dash.off_2'))}
       </span>
     {/snippet}
     <div class="row tight">
-      <span class="grow small dim">{hr ? 'Ubrzanje' : 'Acceleration'}</span>
+      <span class="grow small dim">{t('dash.acceleration')}</span>
       <span class="badge info">{store.streams?.hw ?? status?.transcode?.hw ?? '—'}</span>
     </div>
     <div class="row tight">
-      <span class="grow small dim">{hr ? 'Dostupni enkoderi' : 'Available encoders'}</span>
+      <span class="grow small dim">{t('dash.available_encoders')}</span>
       <span class="badge">{(store.streams?.encoders ?? status?.transcode?.encoders ?? []).join(', ') || '—'}</span>
     </div>
     <div class="row tight">
-      <span class="grow small dim">{hr ? 'Istovremeno najviše' : 'Concurrent limit'}</span>
+      <span class="grow small dim">{t('dash.concurrent_limit')}</span>
       <span class="badge">{store.streams?.max_concurrent ?? status?.transcode?.max_concurrent ?? 0}</span>
     </div>
     <div class="row tight">
-      <span class="grow small dim">{hr ? 'U tijeku' : 'Running now'}</span>
+      <span class="grow small dim">{t('dash.running_now')}</span>
       <span class="badge" class:info={(store.streams?.active ?? 0) > 0}>{store.streams?.active ?? 0}</span>
     </div>
     <div class="row tight">
-      <span class="grow small dim">{hr ? 'Metapodaci izmjereni' : 'Metadata probed'}</span>
+      <span class="grow small dim">{t('dash.metadata_probed')}</span>
       <span class="badge">{status?.media_probed ?? 0}</span>
     </div>
   </Card>
 
   <!-- zapisnik -->
-  <Card id="logs" title={hr ? 'Zapisnik' : 'Log'} span={spanOf('logs', 12)} collapsed={collapsedOf('logs')}>
+  <Card id="logs" title={t('dash.log')} span={spanOf('logs', 12)} collapsed={collapsedOf('logs')}>
     {#snippet actions()}
       <span class="badge" class:ok={store.logSocket === 'open'} class:err={store.logSocket !== 'open'}>
         <span class="dot {store.logSocket === 'open' ? 'live' : 'off'}"></span>
-        {store.logSocket === 'open' ? (hr ? 'uživo' : 'live') : (hr ? 'prekinuto' : 'offline')}
+        {store.logSocket === 'open' ? (t('dash.live')) : (t('dash.offline'))}
       </span>
-      <button class="btn ghost" title={hr ? 'Cijeli zapisnik' : 'Full log'} onclick={() => onopen?.('logs')}>→</button>
+      <button class="btn ghost" title={t('dash.full_log')} onclick={() => onopen?.('logs')}>→</button>
     {/snippet}
     <div class="logs" style="max-height: 260px">
       {#each logs as line, index (index)}
@@ -322,12 +323,12 @@
           <span class="msg">{line.message}</span>
         </div>
       {:else}
-        <div class="empty">{hr ? 'Zapisnik je prazan.' : 'The log is empty.'}</div>
+        <div class="empty">{t('dash.the_log_is_empty')}</div>
       {/each}
     </div>
   </Card>
 
   <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end">
-    <button class="btn ghost" onclick={resetLayout}>{hr ? 'Vrati raspored kartica' : 'Reset card layout'}</button>
+    <button class="btn ghost" onclick={resetLayout}>{t('dash.reset_card_layout')}</button>
   </div>
 </div>

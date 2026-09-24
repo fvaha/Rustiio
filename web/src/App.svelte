@@ -13,12 +13,17 @@
   import Logs from './routes/Logs.svelte'
   import Settings from './routes/Settings.svelte'
 
-  const fromHash = () => {
-    const raw = location.hash.replace(/^#\/?/, '')
-    return TAB_IDS.includes(raw) ? raw : 'dashboard'
+  // Ruta iz adrese: `#/settings`. Sve ostalo (npr. `#server` iz skoka na sekciju
+  // unutar Postavki) **nije** ruta i ne smije mijenjati stranicu — inače klik na
+  // sekciju Postavki baci korisnika na Overview.
+  const hashRoute = () => {
+    // Prazna adresa i `#/` su Pregled (naslovnica).
+    if (!location.hash || location.hash === '#' || location.hash === '#/') return 'dashboard'
+    const match = location.hash.match(/^#\/([a-z-]+)$/)
+    return match && TAB_IDS.includes(match[1]) ? match[1] : null
   }
 
-  let tab = $state(fromHash())
+  let tab = $state(hashRoute() ?? 'dashboard')
 
   const current = $derived(TABS.find((item) => item.id === tab) ?? TABS[0])
   const online = $derived(store.logSocket === 'open')
@@ -43,7 +48,12 @@
 
   onMount(() => {
     start()
-    const onHash = () => (tab = fromHash())
+    // Mijenjaj stranicu samo kad je u adresi **ruta** (`#/postavke`); skok na
+    // sekciju unutar Postavki (`#server`) ne smije vratiti korisnika na Pregled.
+    const onHash = () => {
+      const route = hashRoute()
+      if (route) tab = route
+    }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   })
@@ -58,15 +68,15 @@
         <div class="page-title">{t(`nav.${current.id}`)}</div>
         <div class="page-sub hide-sm">
           {#if tab === 'dashboard'}
-            {i18n.lang === 'en' ? 'Live state of the server, library and streams' : 'Stanje servera, knjižnice i strimova u živo'}
+            {t('app.live_state_of_the_server_library_and_strea')}
           {:else if tab === 'library'}
-            {i18n.lang === 'en' ? 'What the TVs see, folder by folder' : 'Ono što televizori vide, mapa po mapa'}
+            {t('app.what_the_tvs_see_folder_by_folder')}
           {:else if tab === 'devices'}
-            {i18n.lang === 'en' ? 'TVs that appeared, and the profile each one gets' : 'Televizori koji su se pojavili i profil koji svaki dobiva'}
+            {t('app.tvs_that_appeared_and_the_profile_each_one')}
           {:else if tab === 'logs'}
-            {i18n.lang === 'en' ? 'Live server log with levels and filtering' : 'Zapisnik servera u živo, s razinama i filtriranjem'}
+            {t('app.live_server_log_with_levels_and_filtering')}
           {:else}
-            {i18n.lang === 'en' ? 'Every setting, saved to config.toml' : 'Sva podešavanja, spremaju se u config.toml'}
+            {t('app.every_setting_saved_to_config_toml')}
           {/if}
         </div>
       </div>
@@ -75,7 +85,7 @@
 
       <span class="badge {online ? 'ok' : 'err'}" title={store.status?.base_url}>
         <span class="dot {online ? 'live' : 'off'}"></span>
-        {online ? (i18n.lang === 'en' ? 'connected' : 'spojeno') : (i18n.lang === 'en' ? 'no log stream' : 'nema toka')}
+        {online ? (t('app.connected')) : (t('app.no_log_stream'))}
       </span>
       <button class="btn ghost" title={t('common.refresh')} onclick={refreshStatus}>⟳</button>
 
