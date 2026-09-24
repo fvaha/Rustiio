@@ -1,12 +1,13 @@
 //! HTTP rute: UPnP (device.xml, SCPD, control, eventing) + mediji + REST API.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::{Path as FsPath, PathBuf};
 use std::time::Duration;
 
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{ConnectInfo, Path, State};
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{any, get, post};
@@ -52,6 +53,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/profiles/reload", post(api_profiles_reload))
         .route("/api/profile/{key}", get(api_profile_for_device))
         .route("/api/streams", get(api_streams))
+        .route("/api/search", get(api_search))
+        .route("/api/library", get(api_library))
+        .route("/api/continue", get(api_continue))
+        .route("/api/playstate/{id}", get(api_playstate).put(api_set_playstate).delete(api_clear_playstate))
         .route("/api/decision/{id}", get(api_decision))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
@@ -737,6 +742,218 @@ async fn api_profile_for_device(State(state): State<AppState>, Path(key): Path<S
     match state.capture.profile_toml(&key, &base, &id) {
         Some(text) => ([("content-type", "text/plain; charset=\"utf-8\"")], text).into_response(),
         None => (StatusCode::INTERNAL_SERVER_ERROR, "profil nije generiran").into_response(),
+    }
+}
+
+/// Jedan objekt iz baze kao JSON (isto za pretragu, "nastavi gledati" i REST).
+fn item_json(item: &rustiio_library::ItemRow) -> serde_json::Value {
+    json!({
+        "id": item.id,
+        "title": item.title,
+        "kind": item.kind,
+        "path": item.path.to_string_lossy(),
+        "file": item.file_name(),
+        "size": item.size,
+        "duration_ms": item.duration_ms,
+        "series": item.series,
+        "season": item.season,
+        "episode": item.episode,
+    })
+}
+
+/// Greška iz REST API-ja (uvijek JSON, nikad prazno tijelo).
+fn api_error(status: StatusCode, message: &str) -> Response {
+    (status, axum::Json(json!({ "ok": false, "error": message }))).into_response()
+}
+
+/// Pretraga biblioteke (FTS5): `?q=film&kind=video&limit=50`.
+async fn api_search(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let query = params.get("q").cloned().unwrap_or_default();
+    let kind = params.get("kind").cloned().filter(|kind| !kind.is_empty());
+    let limit = params.get("limit").and_then(|limit| limit.parse::<usize>().ok()).unwrap_or(50).clamp(1, 500);
+
+    let store = state.store.clone();
+    let query_for_search = query.clone();
+    let found = tokio::task::spawn_blocking(move || match kind.as_deref() {
+        Some(kind) => rustiio_library::store::search::search_kind(&store, &query_for_search, kind, limit),
+        None => rustiio_library::store::search::search(&store, &query_for_search, limit),
+    })
+    .await;
+
+    match found {
+        Ok(Ok(hits)) => axum::Json(json!({
+            "query": query,
+            "count": hits.len(),
+            "hits": hits.iter().map(|hit| {
+                let mut value = item_json(&hit.item);
+                value["rank"] = json!(hit.rank);
+                value
+            }).collect::<Vec<_>>(),
+        }))
+        .into_response(),
+        Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+/// Što je u bazi: stabilni indeks (brojevi po vrsti, serije, shema).
+async fn api_library(State(state): State<AppState>) -> Response {
+    let store = state.store.clone();
+    let stats = tokio::task::spawn_blocking(move || {
+        let counts = store.counts().map_err(|error| error.to_string())?;
+        let items = store.item_count().map_err(|error| error.to_string())?;
+        let schema = store.schema_version().map_err(|error| error.to_string())?;
+        let series = rustiio_library::store::items::series_list(&store).map_err(|error| error.to_string())?;
+        Ok::<_, String>((counts, items, schema, series))
+    })
+    .await;
+
+    match stats {
+        Ok(Ok((counts, items, schema, series))) => axum::Json(json!({
+            "items": items,
+            "schema": schema,
+            "kinds": counts.iter().map(|(kind, count)| (kind.clone(), *count)).collect::<HashMap<_, _>>(),
+            "series": series.iter().map(|(name, episodes)| json!({ "name": name, "episodes": episodes })).collect::<Vec<_>>(),
+        }))
+        .into_response(),
+        Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+/// "Nastavi gledati" za uređaj koji pita (`?device=` ili zaglavlja).
+async fn api_continue(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Response {
+    let device = params.get("device").cloned().unwrap_or_else(|| crate::library::device_key(&headers));
+    let limit = params.get("limit").and_then(|limit| limit.parse::<usize>().ok()).unwrap_or(20).clamp(1, 100);
+    let store = state.store.clone();
+    let device_for_query = device.clone();
+
+    let found = tokio::task::spawn_blocking(move || {
+        rustiio_library::store::play_state::continue_watching(&store, &device_for_query, limit)
+    })
+    .await;
+
+    match found {
+        Ok(Ok(rows)) => axum::Json(json!({
+            "device": device,
+            "count": rows.len(),
+            "items": rows.iter().map(|(item, position)| {
+                let mut value = item_json(item);
+                value["position_ms"] = json!(position.position_ms);
+                value["progress"] = json!(position.progress());
+                value["updated_at"] = json!(position.updated_at);
+                value
+            }).collect::<Vec<_>>(),
+        }))
+        .into_response(),
+        Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+/// Pozicija uređaja na objektu.
+async fn api_playstate(State(state): State<AppState>, Path(id): Path<i64>, headers: HeaderMap) -> Response {
+    let device = crate::library::device_key(&headers);
+    let store = state.store.clone();
+    let device_for_query = device.clone();
+    let found = tokio::task::spawn_blocking(move || {
+        rustiio_library::store::play_state::get(&store, &device_for_query, id)
+    })
+    .await;
+
+    match found {
+        Ok(Ok(Some(position))) => axum::Json(json!({
+            "device": device,
+            "item_id": id,
+            "position_ms": position.position_ms,
+            "duration_ms": position.duration_ms,
+            "played": position.played,
+            "progress": position.progress(),
+            "updated_at": position.updated_at,
+        }))
+        .into_response(),
+        Ok(Ok(None)) => {
+            axum::Json(json!({ "device": device, "item_id": id, "position": null })).into_response()
+        }
+        Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+/// Zapiši poziciju: `{"position_ms": 120000, "duration_ms": 7200000}`.
+async fn api_set_playstate(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> Response {
+    let device = body
+        .get("device")
+        .and_then(|device| device.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| crate::library::device_key(&headers));
+    let position_ms = body.get("position_ms").and_then(serde_json::Value::as_i64).unwrap_or(0);
+    let duration_ms = body.get("duration_ms").and_then(serde_json::Value::as_i64);
+    let played = body.get("played").and_then(serde_json::Value::as_bool).unwrap_or(false);
+
+    let store = state.store.clone();
+    let device_for_write = device.clone();
+    let written = tokio::task::spawn_blocking(move || {
+        if played {
+            return rustiio_library::store::play_state::mark_played(
+                &store,
+                &device_for_write,
+                id,
+                rustiio_library::Store::now(),
+            );
+        }
+        rustiio_library::store::play_state::set(
+            &store,
+            &device_for_write,
+            id,
+            position_ms,
+            duration_ms,
+            rustiio_library::Store::now(),
+        )
+    })
+    .await;
+
+    match written {
+        Ok(Ok(())) => {
+            info!(device = %device, item = id, position_ms, "pozicija zapisana");
+            axum::Json(json!({ "ok": true, "device": device, "item_id": id, "position_ms": position_ms }))
+                .into_response()
+        }
+        Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+/// Zaboravi poziciju ("ne nastavljaj").
+async fn api_clear_playstate(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Response {
+    let device = crate::library::device_key(&headers);
+    let store = state.store.clone();
+    let device_for_write = device.clone();
+    let cleared = tokio::task::spawn_blocking(move || {
+        rustiio_library::store::play_state::clear(&store, &device_for_write, id)
+    })
+    .await;
+
+    match cleared {
+        Ok(Ok(())) => axum::Json(json!({ "ok": true, "device": device, "item_id": id })).into_response(),
+        Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
 }
 

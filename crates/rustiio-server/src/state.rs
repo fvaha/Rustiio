@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use rustiio_core::DeviceIdentity;
 use rustiio_core::config::Config;
-use rustiio_library::{Catalog, DurationProbe, MediaProbe, NodeKind, ScanOptions, scan};
+use rustiio_library::{Catalog, DurationProbe, MediaProbe, NodeKind, ScanOptions, Store, scan};
 use rustiio_profiles::{Capture, ProfileSet};
 use rustiio_transcode::{HwSupport, SessionManager, detect_hw};
 use rustiio_upnp::DeviceMeta;
@@ -36,6 +36,8 @@ pub struct AppState {
     pub capture: Arc<Capture>,
     /// Transcode sesije (ffmpeg) s limitom paralelnih.
     pub sessions: Arc<SessionManager>,
+    /// SQLite indeks: stabilni id-evi, pretraga (FTS), watch-state.
+    pub store: Arc<Store>,
     /// Mapa s korisnickim profilima.
     profiles_dir: Arc<PathBuf>,
     started: Instant,
@@ -48,6 +50,16 @@ impl AppState {
         self
     }
 
+    /// Zamijeni bazu u memoriji pravom (datoteka) i uskladi id-eve kataloga.
+    pub fn with_store(mut self, store: Store) -> Self {
+        self.store = Arc::new(store);
+        if let Ok(mut catalog) = self.catalog.try_write() {
+            let summary = crate::library::sync_catalog(&self.store, &mut catalog);
+            info!(roots = summary.roots, remapped = summary.remapped, "katalog prebacen na id-eve iz baze");
+        }
+        self
+    }
+
     pub fn new(
         config: Arc<Config>,
         identity: DeviceIdentity,
@@ -56,6 +68,12 @@ impl AppState {
         scan_options: ScanOptions,
         profiles: ProfileSet,
     ) -> Self {
+        // Baza u memoriji dok `with_store` ne preda pravu datoteku. Id-evi se
+        // dodjeljuju odmah (isti kod kao za datoteku) da `/api/search` radi i bez nje.
+        let store = Arc::new(Store::open_memory().expect("SQLite u memoriji"));
+        let mut catalog = catalog;
+        crate::library::sync_catalog(&store, &mut catalog);
+
         let duration_probe = Arc::new(DurationProbe::new(
             config.transcode.ffprobe_path.clone(),
             config.transcode.probe_duration,
@@ -95,6 +113,7 @@ impl AppState {
             profiles: Arc::new(RwLock::new(profiles)),
             capture: Arc::new(Capture::new()),
             sessions,
+            store,
             profiles_dir: Arc::new(PathBuf::from("profiles")),
             started: Instant::now(),
         }
@@ -125,7 +144,8 @@ impl AppState {
     ///
     /// Nakon skena salje evente pretplacenim uredjajima — inace TV drzi stari popis.
     pub async fn rescan(&self) -> usize {
-        let fresh = scan(&self.scan_options);
+        let mut fresh = scan(&self.scan_options);
+        let summary = crate::library::sync_catalog(&self.store, &mut fresh);
         let count = fresh.len();
         let update_id = {
             let mut catalog = self.catalog.write().await;
@@ -134,10 +154,22 @@ impl AppState {
             catalog.update_id = next_update_id;
             next_update_id
         };
+        info!(
+            added = summary.added,
+            updated = summary.updated,
+            removed = summary.removed,
+            "sken upisan u bazu"
+        );
         self.duration_probe.clear();
         self.media_probe.clear();
+        self.warm_probe_from_db();
         self.notify_all(update_id).await;
         count
+    }
+
+    /// Napuni `MediaProbe` cache iz baze (nakon restarta nema ponovnog ffprobe-a).
+    pub fn warm_probe_from_db(&self) -> usize {
+        crate::library::warm_probe_cache(&self.store, &self.media_probe)
     }
 
     /// Ponovno ucitaj profile s diska (REST: `POST /api/profiles/reload`).
@@ -213,9 +245,17 @@ impl AppState {
             let mut set = tokio::task::JoinSet::new();
             for path in chunk {
                 let probe = self.media_probe.clone();
+                let store = self.store.clone();
                 let path = path.clone();
                 set.spawn_blocking(move || {
                     probe.probe(&path);
+                    // Metapodatke odmah zapisi u bazu: sljedeci start ih ne mjeri ponovno.
+                    if let Some(info) = probe.get(&path)
+                        && let Ok(Some(item_id)) = store.item_id(&path)
+                    {
+                        let _ =
+                            rustiio_library::store::items::update_media(&store, item_id, &info, Store::now());
+                    }
                 });
             }
             while set.join_next().await.is_some() {}

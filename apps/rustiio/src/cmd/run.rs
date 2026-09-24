@@ -11,7 +11,7 @@ use rustiio_core::net;
 use rustiio_core::{
     DEVICE_TYPE, DeviceIdentity, SERVICE_CONNECTION_MANAGER, SERVICE_CONTENT_DIRECTORY, server_header,
 };
-use rustiio_library::{ScanOptions, scan};
+use rustiio_library::{ScanOptions, Store, scan};
 use rustiio_profiles::builtin;
 use rustiio_server::{AppState, router};
 use rustiio_ssdp::{SsdpConfig, start as start_ssdp};
@@ -68,10 +68,11 @@ pub async fn execute(config_path: PathBuf, args: RunArgs) -> anyhow::Result<()> 
         scan_options,
         profiles,
     )
-    .with_profiles_dir(profiles_dir);
+    .with_profiles_dir(profiles_dir)
+    .with_store(open_store(&config_path)?);
 
-    // Metapodaci u pozadini: dok TV pregledava biblioteku, kodeci su vec procitani
-    // (bez ovoga bi prvi Browse s transcodeom cekao ffprobe za svaki film).
+    // Metapodaci iz baze odmah (bez ffprobe-a), ostatak u pozadini.
+    let from_db = state.warm_probe_from_db();
     {
         let warm = state.clone();
         tokio::spawn(async move {
@@ -80,6 +81,9 @@ pub async fn execute(config_path: PathBuf, args: RunArgs) -> anyhow::Result<()> 
                 info!(probed, "metapodaci pripremljeni");
             }
         });
+    }
+    if from_db > 0 {
+        info!(from_db, "metapodaci iz baze");
     }
 
     let app = router(state);
@@ -169,4 +173,23 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
     info!("gasim se");
+}
+
+/// Otvori SQLite indeks biblioteke.
+///
+/// Putanja je `<config_dir>/rustiio.db`; `RUSTIIO_DB` je pregazi (korisno za testove
+/// i za bazu na drugom disku). Baza pamti stabilne DLNA id-eve, metapodatke i
+/// watch-state, pa se ne smije izgubiti između restarta.
+fn open_store(config_path: &std::path::Path) -> anyhow::Result<Store> {
+    let path = std::env::var_os("RUSTIIO_DB").map(PathBuf::from).unwrap_or_else(|| {
+        config_path.parent().unwrap_or_else(|| std::path::Path::new(".")).join("rustiio.db")
+    });
+    let store = Store::open(&path).with_context(|| format!("SQLite baza {}", path.display()))?;
+    info!(
+        path = %path.display(),
+        schema = store.schema_version().unwrap_or(0),
+        items = store.item_count().unwrap_or(0),
+        "baza otvorena"
+    );
+    Ok(store)
 }

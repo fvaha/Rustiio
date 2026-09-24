@@ -7,10 +7,14 @@
 pub mod mediainfo;
 pub mod probe;
 pub mod scan;
+pub mod series;
+pub mod store;
 
 pub use mediainfo::{AudioStream, MediaInfo, MediaProbe, VideoStream, probe as probe_media};
 pub use probe::DurationProbe;
 pub use scan::{Catalog, Node, NodeKind, ScanOptions, classify, scan};
+pub use series::SeriesInfo;
+pub use store::{ItemRow, Position, ScanItem, SearchHit, Store, SyncReport};
 
 /// Ekstenzije titlova koje prepoznajemo (DJELJENO s CDS-om i HTTP slojem).
 pub const SUBTITLE_EXTENSIONS: [&str; 5] = ["srt", "vtt", "sub", "ass", "ssa"];

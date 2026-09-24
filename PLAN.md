@@ -144,18 +144,21 @@
 
 **Što ostaje iz ove faze:** Sharp Aquos test; capture dugme u web UI-ju (Faza 4); profili za 3–4 uređaja koja još nisu viđena (dodaju se iz capturea kad se pojave).
 
-### Faza 3 — Biblioteka + metapodaci (~2 tjedna)
+### Faza 3 — Biblioteka + metapodaci (u toku)
 
-- [ ] SQLite (rusqlite bundled) shema: `roots`, `items`, `play_state`, `resolutions`, FTS5 za pretragu
-- [ ] `notify` watcher (inotify/FSEvents/ReadDirectoryChangesW) → delta scan u sekundi, noćni full scan
-- [ ] `ffprobe -print_format json` → trajanje, rezolucija, kodeci, bitrate, broj audio kanala
-- [ ] prepoznavanje serija (`S01E03`, `1x03`, `Sezona 2`) → sezone/epizode
-- [ ] TMDB obogaćivanje (poster, fanart, žanr, glumci, opis, ocjena) + lokalna cache slika i thumbnaileva (za `JPEG_TN`)
-- [ ] watch-state (device UDN + pozicija), "Nastavi gledati", "Nedavno dodano"
-- [ ] `Search` u CDS-u (radi preko FTS-a)
+- [x] SQLite (`rusqlite` bundled) shema: `roots`, `items`, `play_state`, `devices`, FTS5 za pretragu; migracije preko `PRAGMA user_version`
+- [x] **stabilni DLNA id-evi**: id dolazi iz baze po putanji (`Catalog::remap_ids`), pa TV koji zapamti `ObjectID` vidi isti film i nakon restarta i nakon reskena
+- [x] `ffprobe -print_format json` → trajanje, rezolucija, kodeci, kanali, bitrate — **u bazu**, i natrag u cache pri startu (bez ponovnog mjerenja)
+- [x] prepoznavanje serija (`S01E03`, `1x03`, `Sezona 2 Epizoda 5`) → `series`/`season`/`episode` u bazi
+- [x] watch-state (uređaj + pozicija, prag 10 s, auto-"odgledano") + `GET /api/continue` ("Nastavi gledati")
+- [x] pretraga preko FTS5: `GET /api/search?q=&kind=&limit=` (naslov po prefiksu, putanja po cijeloj riječi, bez dijakritike)
+- [x] `GET /api/library` (brojevi po vrsti, serije, shema), `GET/PUT/DELETE /api/playstate/{id}`
+- [ ] CDS `Search` akcija preko istog FTS-a (web UI dio Faze 4 ga ionako koristi prvi)
+- [ ] `notify` watcher (inotify/FSEvents) → delta scan u sekundi, noćni full scan
+- [ ] TMDB obogaćivanje (poster, fanart, žanr, opis) + lokalna cache slika/thumbnaileva (`JPEG_TN`)
 - [ ] titlovi: auto-dohvat (OpenSubtitles/titlovi.com) i madlad HR prijevodi kao modul
 
-**Acceptance:** 10k fajlova indeksirano < 30 s, delta scan < 2 s, poster se vidi u VLC-u i na TV-u, "nastavi gledati" radi.
+**Acceptance:** 10k fajlova indeksirano < 30 s, delta scan < 2 s, poster se vidi u VLC-u i na TV-u, "nastavi gledati" radi. → *prvi dio (indeks, stabilni id-evi, pretraga, watch-state) radi; poster i delta scan preostaju.*
 
 ### Faza 4 — Web UI + API (~2 tjedna)
 
@@ -274,4 +277,20 @@
 
 **Napomena:** `serviio.service` je na .10 trenutno **inactive** — usporedba 1:1 na TV-u čeka da se Serviio upali (ili ne, ako Rustiio odmah radi).
 
-**Sljedeća konkretna akcija:** Faza 2 — `rustiio-profiles` (TOML baza + matcher + capture) i `rustiio-transcode` (decision engine + ffmpeg + HW detekcija).
+**Faza 3 — prvi dio završen i provjeren (2026-09-24):**
+
+| provjera | rezultat |
+|---|---|
+| `cargo test --workspace` | **167 testova** prolazi (novi: `series` 6, `store` 17, `library` 3) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | čisto |
+| baza se stvara uz config | `rustiio.db` (`<config_dir>/rustiio.db`, `RUSTIIO_DB` pregazi), shema 1, WAL |
+| DLNA id-evi iz baze | `Browse` vraća `ObjectID` iz SQLite-a (film = `2`), ne redni broj skena |
+| **restart servera** | **isti `ObjectID`** (2 → 2) i pozicija na mjestu |
+| metapodaci nakon restarta | `media_probed=2` **bez ffprobe-a** (iz baze u cache) |
+| `GET /api/search?q=test+film` | pogađa film (FTS5; naslov po prefiksu, putanja po riječi, bez dijakritike) |
+| `GET /api/search?q=test&kind=audio` | filter po vrsti radi |
+| `PUT/GET /api/playstate/{id}` | pozicija 15000 ms zapisana; VLC i Samsung TV imaju **odvojene** pozicije |
+| `GET /api/continue` | nezavršeni film se vraća; nakon 95 % filma nestaje (auto-"odgledano") |
+
+**Sljedeća konkretna akcija:** Faza 3 ostatak — CDS `Search` akcija preko FTS-a, `notify` watcher
+(delta scan), TMDB obogaćivanje s poster cacheom.

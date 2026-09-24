@@ -131,6 +131,48 @@ impl Catalog {
         items.truncate(limit);
         items
     }
+
+    /// Prave mape iz configa (djeca korijena "0") — svaka je jedan `root` u bazi.
+    pub fn top_level(&self) -> Vec<Node> {
+        self.children("0")
+    }
+
+    /// Čvorovi ispod zadane putanje (uključivo) — jedan sken = jedan `root` u bazi.
+    pub fn under(&self, root: &std::path::Path) -> Vec<Node> {
+        self.map.values().filter(|node| node.path.starts_with(root)).cloned().collect()
+    }
+
+    /// Zamijeni id-eve kataloga id-evima iz baze (putanja → novi id).
+    ///
+    /// Vraća broj preimenovanih čvorova. Id-evi koji nisu u mapi (korijen "0",
+    /// virtualne kategorije) ostaju kakvi su.
+    pub fn remap_ids(&mut self, new_ids: &HashMap<std::path::PathBuf, String>) -> usize {
+        let renamed: HashMap<String, String> = self
+            .map
+            .iter()
+            .filter_map(|(old_id, node)| {
+                new_ids.get(&node.path).map(|new_id| (old_id.clone(), new_id.clone()))
+            })
+            .collect();
+        if renamed.is_empty() {
+            return 0;
+        }
+
+        let previous = std::mem::take(&mut self.map);
+        let renamed_count = renamed.len();
+        for (old_id, mut node) in previous {
+            let new_id = renamed.get(&old_id).cloned().unwrap_or(old_id);
+            node.parent_id = renamed.get(&node.parent_id).cloned().unwrap_or(node.parent_id);
+            node.children = node
+                .children
+                .iter()
+                .map(|child| renamed.get(child).cloned().unwrap_or_else(|| child.clone()))
+                .collect();
+            node.id = new_id.clone();
+            self.map.insert(new_id, node);
+        }
+        renamed_count
+    }
 }
 
 #[derive(Debug, Clone, Default)]
