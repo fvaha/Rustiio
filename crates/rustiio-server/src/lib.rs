@@ -4,9 +4,11 @@
 //! sektore i drzi stanje (config, katalog, identitet).
 
 pub mod gena;
+pub mod playback;
 pub mod routes;
 pub mod state;
 
 pub use gena::Registry as GenaRegistry;
+pub use playback::PlaybackEngine;
 pub use routes::router;
 pub use state::AppState;

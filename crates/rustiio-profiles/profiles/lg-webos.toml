@@ -1,0 +1,31 @@
+# LG webOS (2014+).
+id = "lg-webos"
+name = "LG TV (webOS)"
+description = "webOS 1.0–6.0: H.264 + HEVC, 4K, DTS passthrough na novijima."
+
+[match]
+user_agent = ["WebOS", "LG Browser", "LG SmartTV"]
+friendly_name = ["LG", "webOS"]
+
+[video]
+containers = ["mp4", "m4v", "mkv", "ts", "m2ts", "webm", "avi", "mov"]
+codecs = ["h264", "hevc", "vp9", "mpeg2video", "mpeg4"]
+max_width = 3840
+max_height = 2160
+max_bitrate_kbps = 50000
+
+[audio]
+codecs = ["aac", "mp3", "ac3", "eac3", "dts", "flac", "opus", "vorbis"]
+max_channels = 6
+
+[subtitles]
+mode = "soft"
+formats = ["srt", "vtt"]
+
+[transcode]
+container = "mpegts"
+video_codec = "h264"
+audio_codec = "aac"
+audio_channels = 2
+max_bitrate_kbps = 14000
+allow_remux = true

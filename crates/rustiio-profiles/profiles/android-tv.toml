@@ -1,0 +1,30 @@
+# Android TV / Google TV (Sony, Philips, TCL, NVIDIA Shield, AFT* stickovi).
+id = "android-tv"
+name = "Android TV / Google TV"
+description = "ExoPlayer: H.264/HEVC/VP9/AV1, 4K, soft titlovi."
+
+[match]
+user_agent = ["ExoPlayer", "Android", "GoogleTV", "AFT", "Shield"]
+friendly_name = ["Android TV", "Google TV", "Chromecast", "Shield"]
+
+[video]
+containers = ["mp4", "m4v", "mkv", "ts", "webm", "mov", "avi"]
+codecs = ["h264", "hevc", "vp8", "vp9", "av1", "mpeg2video", "mpeg4"]
+max_width = 3840
+max_height = 2160
+max_bitrate_kbps = 80000
+
+[audio]
+codecs = ["aac", "mp3", "ac3", "eac3", "dts", "flac", "opus", "vorbis", "truehd"]
+max_channels = 8
+
+[subtitles]
+mode = "soft"
+formats = ["srt", "vtt", "ass"]
+
+[transcode]
+container = "mp4"
+video_codec = "h264"
+audio_codec = "aac"
+audio_channels = 2
+max_bitrate_kbps = 20000

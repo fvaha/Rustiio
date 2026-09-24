@@ -13,6 +13,7 @@ pub struct Config {
     pub server: ServerSection,
     pub library: LibrarySection,
     pub transcode: TranscodeSection,
+    pub profiles: ProfilesSection,
 }
 
 impl Config {
@@ -161,6 +162,23 @@ impl Default for TranscodeSection {
             buffer_secs: 30,
             probe_duration: true,
         }
+    }
+}
+
+/// Profili uredjaja: koji TV sto moze i kako mu se salje.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProfilesSection {
+    /// Mapa s korisnickim `*.toml` profilima. Prazno = `<config_dir>/profiles`.
+    /// Profil s istim `id`-om pregazi ugradjeni.
+    pub dir: PathBuf,
+    /// Biljezi zaglavlja svakog uredjaja koji nesto trazi (za pravljenje profila).
+    pub capture: bool,
+}
+
+impl Default for ProfilesSection {
+    fn default() -> Self {
+        Self { dir: PathBuf::new(), capture: true }
     }
 }
 

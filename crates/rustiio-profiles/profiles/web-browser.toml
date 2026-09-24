@@ -1,0 +1,31 @@
+# Web preglednik (kad se film otvori iz Rustiio web sucelja ili direktnim linkom).
+id = "web-browser"
+name = "Web preglednik"
+description = "Chrome/Firefox/Safari: MP4 + WebM, VP8/VP9/AV1; MKV i AC3 obicno ne idu."
+
+[match]
+user_agent = ["Mozilla", "Chrome", "Safari", "Firefox", "Edge"]
+friendly_name = ["Browser"]
+
+[video]
+containers = ["mp4", "m4v", "webm", "mov"]
+codecs = ["h264", "vp8", "vp9", "av1"]
+max_width = 3840
+max_height = 2160
+max_bitrate_kbps = 40000
+
+[audio]
+codecs = ["aac", "mp3", "opus", "vorbis", "flac"]
+max_channels = 2
+
+[subtitles]
+mode = "soft"
+formats = ["vtt", "srt"]
+
+[transcode]
+container = "mp4"
+video_codec = "h264"
+audio_codec = "aac"
+audio_channels = 2
+max_bitrate_kbps = 14000
+allow_remux = true

@@ -1,23 +1,28 @@
 //! HTTP rute: UPnP (device.xml, SCPD, control, eventing) + mediji + REST API.
 
+use std::net::SocketAddr;
 use std::path::{Path as FsPath, PathBuf};
 use std::time::Duration;
 
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{ConnectInfo, Path, State};
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{any, get, post};
 use serde_json::json;
+use tokio_util::io::ReaderStream;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use rustiio_cds::{BrowseOptions, BrowseRequest, MAX_RESULTS, browse, sort_capabilities};
+use rustiio_profiles::{DeviceIdentity as DeviceKey, Profile};
+use rustiio_transcode::{PlaybackMode, StartRequest};
 use rustiio_upnp::protocol;
 use rustiio_upnp::{device_description, escape, scpd, soap};
 
 use crate::gena;
+use crate::playback::PlaybackEngine;
 use crate::state::AppState;
 
 const XML_CONTENT_TYPE: &str = "text/xml; charset=\"utf-8\"";
@@ -37,8 +42,17 @@ pub fn router(state: AppState) -> Router {
         .route("/res/{id}", get(media_by_id))
         .route("/res/{id}/{filename}", get(media_by_name))
         .route("/sub/{id}/{filename}", get(subtitle_by_name))
+        // Transcode/remux: isti objekt, ali kroz ffmpeg (profil uredjaja je odlucio).
+        .route("/tr/{id}", get(transcode_by_id))
+        .route("/tr/{id}/{filename}", get(transcode_by_name))
         .route("/api/status", get(api_status))
         .route("/api/rescan", post(api_rescan))
+        .route("/api/devices", get(api_devices))
+        .route("/api/profiles", get(api_profiles))
+        .route("/api/profiles/reload", post(api_profiles_reload))
+        .route("/api/profile/{key}", get(api_profile_for_device))
+        .route("/api/streams", get(api_streams))
+        .route("/api/decision/{id}", get(api_decision))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
 }
@@ -160,6 +174,7 @@ fn event_body(state: &AppState, service: &str) -> String {
 
 async fn content_directory_control(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -186,12 +201,23 @@ async fn content_directory_control(
                 requested_count: arg(&args, "RequestedCount").and_then(|v| v.parse().ok()).unwrap_or(0),
                 sort_criteria: arg(&args, "SortCriteria").unwrap_or_default(),
             };
+            let profile = profile_for(&state, &headers, Some(peer)).await;
+            // Metapodaci prije ispisa: bez njih ne znamo treba li uredjaju transcode.
+            prefetch_media(&state, &browse_request).await;
+
             let catalog = state.catalog.read().await;
+            let engine = PlaybackEngine::new(
+                &profile,
+                state.sessions.hw(),
+                &state.media_probe,
+                state.config.transcode.enabled,
+            );
             let options = BrowseOptions {
                 base_url: &state.base_url,
                 max_results: MAX_RESULTS,
                 views: state.config.library.views,
                 recent_limit: state.config.library.recent_limit,
+                playback: Some(&engine),
             };
             match browse(&catalog, &browse_request, &options) {
                 Ok(outcome) => {
@@ -199,6 +225,7 @@ async fn content_directory_control(
                         object_id = %browse_request.object_id,
                         total = outcome.total,
                         returned = outcome.returned,
+                        profile = %profile.id,
                         "Browse"
                     );
                     let inner = format!(
@@ -356,6 +383,462 @@ async fn probe_duration(state: &AppState, path: &FsPath) -> Option<u64> {
     tokio::task::spawn_blocking(move || probe.duration_ms(&owned)).await.ok().flatten()
 }
 
+// --------------------------------------------------- transcode (ffmpeg stream)
+
+async fn transcode_by_id(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    method: Method,
+) -> Response {
+    serve_transcoded(&state, &id, &headers, Some(peer), method == Method::HEAD).await
+}
+
+async fn transcode_by_name(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path((id, _filename)): Path<(String, String)>,
+    headers: HeaderMap,
+    method: Method,
+) -> Response {
+    serve_transcoded(&state, &id, &headers, Some(peer), method == Method::HEAD).await
+}
+
+/// Posluzi objekt kroz ffmpeg — ili original, ako profil kaze da uredjaj moze sam.
+async fn serve_transcoded(
+    state: &AppState,
+    id: &str,
+    headers: &HeaderMap,
+    peer: Option<SocketAddr>,
+    head_only: bool,
+) -> Response {
+    let node = {
+        let catalog = state.catalog.read().await;
+        match catalog.get(id) {
+            Some(node) if !node.is_container() => node.clone(),
+            _ => return (StatusCode::NOT_FOUND, "no such object").into_response(),
+        }
+    };
+
+    let profile = profile_for(state, headers, peer).await;
+
+    // Metapodaci su blokirajuci (ffprobe) — prvi zahtjev za novi fajl to plati jednom.
+    if !state.media_probe.is_known(&node.path) {
+        let probe = state.media_probe.clone();
+        let path = node.path.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            probe.probe(&path);
+        })
+        .await;
+    }
+
+    let engine = PlaybackEngine::new(
+        &profile,
+        state.sessions.hw(),
+        &state.media_probe,
+        state.config.transcode.enabled,
+    );
+    match engine.decision(&node) {
+        // Uredjaj moze original (ili ne znamo dovoljno) — saljemo fajl kakav jest.
+        None => return serve_node(state, id, headers, head_only).await,
+        Some(decision) if decision.mode == PlaybackMode::Direct => {
+            return serve_node(state, id, headers, head_only).await;
+        }
+        Some(decision) => {
+            if let Some((mode, reasons)) = engine.decision_summary(&node) {
+                info!(
+                    object_id = %id,
+                    profile = %profile.id,
+                    mode = %mode,
+                    reasons = %reasons,
+                    device = %header_str(headers, "user-agent").unwrap_or_else(|| "-".to_string()),
+                    "transcode"
+                );
+            }
+            serve_ffmpeg(state, &node, &decision, id, headers, peer, head_only).await
+        }
+    }
+}
+
+/// Pokreni ffmpeg i vrati tijelo koje ga drzi na zivotu dok TV gleda.
+async fn serve_ffmpeg(
+    state: &AppState,
+    node: &rustiio_library::Node,
+    decision: &rustiio_transcode::Decision,
+    id: &str,
+    headers: &HeaderMap,
+    peer: Option<SocketAddr>,
+    head_only: bool,
+) -> Response {
+    state.capture.note_stream(&device_key(headers, peer), id);
+
+    // `TimeSeekRange` na transcode streamu = `-ss` prije ulaza (TV premotava film).
+    let start_at = header_str(headers, "timeseekrange.dlna.org")
+        .and_then(|value| rustiio_http::parse_time_seek(&value))
+        .map(|seek| seek.start_ms)
+        .filter(|ms| *ms > 0);
+
+    let extension =
+        node.path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    let request = StartRequest {
+        input: &node.path,
+        source_ext: &extension,
+        decision,
+        ffmpeg_path: state.sessions.ffmpeg_path(),
+        start_at_ms: start_at,
+        subtitle: node.subtitle.as_deref(),
+    };
+
+    if head_only {
+        return transcode_response(decision, &content_features(&decision.protocol_info), None, start_at);
+    }
+
+    let mut session = match state.sessions.start(&request, id, decision.hw.name()).await {
+        Ok(session) => session,
+        Err(error) => {
+            warn!(object_id = %id, %error, "transcode nije pokrenut");
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("transcode: {error}")).into_response();
+        }
+    };
+    let Some(stdout) = session.take_stdout() else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "ffmpeg nije dao izlaz").into_response();
+    };
+
+    // Sesija putuje s tijelom: kad TV zatvori stream, ffmpeg se ubija i mjesto se vraca.
+    let stream = SessionStream { inner: ReaderStream::new(stdout), _session: session };
+    transcode_response(
+        decision,
+        &content_features(&decision.protocol_info),
+        Some(axum::body::Body::from_stream(stream)),
+        start_at,
+    )
+}
+
+/// DLNA `contentFeatures.dlna.org` je dio `protocolInfo`-a nakon cetvrtog dvotocka.
+fn content_features(protocol_info: &str) -> String {
+    protocol_info.splitn(4, ':').nth(3).unwrap_or_default().to_string()
+}
+
+fn transcode_response(
+    decision: &rustiio_transcode::Decision,
+    content_features: &str,
+    body: Option<axum::body::Body>,
+    start_at: Option<u64>,
+) -> Response {
+    let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, decision.mime.clone())
+        .header("transfermode.dlna.org", "Streaming")
+        .header("contentfeatures.dlna.org", content_features)
+        .header(header::CACHE_CONTROL, "no-store")
+        // Duljina streama se ne zna unaprijed, a TV-i ne vole chunked bez ovoga.
+        .header(header::CONNECTION, "close");
+    if let Some(start_ms) = start_at {
+        builder = builder.header(
+            "timeseekrange.dlna.org",
+            format!("npt={}-", rustiio_http::time_seek::format_npt(start_ms)),
+        );
+    }
+    builder
+        .body(body.unwrap_or_else(axum::body::Body::empty))
+        .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "response").into_response())
+}
+
+/// HTTP tijelo koje drzi ffmpeg sesiju — drop sesije ubija proces.
+struct SessionStream {
+    inner: ReaderStream<tokio::process::ChildStdout>,
+    _session: rustiio_transcode::Session,
+}
+
+impl futures_core::Stream for SessionStream {
+    type Item = Result<Bytes, std::io::Error>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        std::pin::Pin::new(&mut self.get_mut().inner).poll_next(cx)
+    }
+}
+
+// ------------------------------------------------- uredjaji, profili, streamovi
+
+/// Prepoznaj uredjaj iz zaglavlja; zapisi ga (osnova za nove profile).
+async fn profile_for(state: &AppState, headers: &HeaderMap, peer: Option<SocketAddr>) -> Profile {
+    let identity = device_key(headers, peer);
+    let (profile, reasons) = {
+        let profiles = state.profiles.read().await;
+        let outcome = profiles.identify(&identity);
+        (outcome.profile.clone(), outcome.reasons.clone())
+    };
+    if state.config.profiles.capture {
+        state.capture.record(&identity, &profile.id, &dlna_headers(headers));
+    }
+    debug!(
+        device = %identity.user_agent.clone().unwrap_or_default(),
+        profile = %profile.id,
+        reasons = %reasons.join("; "),
+        "profil uredjaja"
+    );
+    profile
+}
+
+fn device_key(headers: &HeaderMap, peer: Option<SocketAddr>) -> DeviceKey {
+    DeviceKey {
+        user_agent: header_str(headers, "user-agent"),
+        friendly_name: header_str(headers, "x-friendly-name"),
+        ip: peer.map(|addr| addr.ip().to_string()),
+        device_type: header_str(headers, "x-av-client-type"),
+    }
+}
+
+/// DLNA zaglavlja koja pamtimo — bez njih se profil pise na pamet.
+fn dlna_headers(headers: &HeaderMap) -> Vec<(String, String)> {
+    const WANTED: [&str; 12] = [
+        "user-agent",
+        "transfermode.dlna.org",
+        "getcontentfeatures.dlna.org",
+        "contentfeatures.dlna.org",
+        "timeseekrange.dlna.org",
+        "range",
+        "x-av-client-type",
+        "x-av-transport",
+        "playback-capacity",
+        "real-time-info",
+        "x-dlna-conversion",
+        "sony-av-transport",
+    ];
+    WANTED
+        .iter()
+        .filter_map(|name| header_str(headers, name).map(|value| (name.to_string(), value)))
+        .collect()
+}
+
+/// Ucitaj metapodatke za objekte koje cemo ispisati (paralelno, ograniceno).
+async fn prefetch_media(state: &AppState, request: &BrowseRequest) {
+    if !state.config.transcode.enabled {
+        return;
+    }
+    let limit = 200;
+    let paths: Vec<PathBuf> = {
+        let catalog = state.catalog.read().await;
+        let nodes = match rustiio_cds::views::find(&request.object_id) {
+            Some(view) => view.items(&catalog, state.config.library.recent_limit),
+            None => catalog.children(&request.object_id),
+        };
+        nodes
+            .into_iter()
+            .filter(|node| {
+                matches!(node.kind, rustiio_library::NodeKind::Video | rustiio_library::NodeKind::Audio)
+            })
+            .map(|node| node.path)
+            .filter(|path| !state.media_probe.is_known(path))
+            .take(limit)
+            .collect()
+    };
+    if paths.is_empty() {
+        return;
+    }
+    debug!(count = paths.len(), object_id = %request.object_id, "pripremam metapodatke");
+    for chunk in paths.chunks(4) {
+        let mut set = tokio::task::JoinSet::new();
+        for path in chunk {
+            let probe = state.media_probe.clone();
+            let path = path.clone();
+            set.spawn_blocking(move || {
+                probe.probe(&path);
+            });
+        }
+        while set.join_next().await.is_some() {}
+    }
+}
+
+/// Uredjaji koji su stvarno nesto trazili (User-Agent, DLNA zaglavlja, profil).
+async fn api_devices(State(state): State<AppState>) -> Response {
+    let devices: Vec<_> = state
+        .capture
+        .all()
+        .into_iter()
+        .map(|record| {
+            json!({
+                "key": record.key,
+                "ip": record.ip,
+                "user_agent": record.user_agent,
+                "friendly_name": record.friendly_name,
+                "profile": record.profile_id,
+                "requests": record.requests,
+                "first_seen": record.first_seen,
+                "last_seen": record.last_seen,
+                "streams": record.streams,
+                "headers": record.headers,
+            })
+        })
+        .collect();
+    axum::Json(json!({ "count": devices.len(), "devices": devices })).into_response()
+}
+
+async fn api_profiles(State(state): State<AppState>) -> Response {
+    let profiles = state.profiles.read().await;
+    let list: Vec<_> = profiles
+        .all()
+        .iter()
+        .map(|profile| {
+            json!({
+                "id": profile.id,
+                "name": profile.name,
+                "description": profile.description,
+                "containers": profile.video.containers,
+                "video_codecs": profile.video.codecs,
+                "max_height": profile.video.max_height,
+                "audio_codecs": profile.audio.codecs,
+                "max_channels": profile.audio.max_channels,
+                "subtitle_mode": format!("{:?}", profile.subtitle_mode()).to_ascii_lowercase(),
+                "target": {
+                    "container": profile.transcode.container,
+                    "video_codec": profile.transcode.video_codec,
+                    "audio_codec": profile.transcode.audio_codec,
+                    "max_bitrate_kbps": profile.transcode.max_bitrate_kbps,
+                },
+                "rules": {
+                    "user_agent": profile.rules.user_agent,
+                    "friendly_name": profile.rules.friendly_name,
+                    "ip": profile.rules.ip,
+                },
+            })
+        })
+        .collect();
+    let dir = state.profiles_dir();
+    axum::Json(json!({
+        "count": list.len(),
+        "dir": dir.display().to_string(),
+        "generic": profiles.generic().id,
+        "profiles": list,
+    }))
+    .into_response()
+}
+
+async fn api_profiles_reload(State(state): State<AppState>) -> Response {
+    let count = state.reload_profiles().await;
+    axum::Json(json!({ "ok": true, "profiles": count, "dir": state.profiles_dir().display().to_string() }))
+        .into_response()
+}
+
+/// Gotov profil (TOML) za uredjaj koji je nesto trazio — kopiraj u mapu profila.
+async fn api_profile_for_device(State(state): State<AppState>, Path(key): Path<String>) -> Response {
+    let Some(record) = state.capture.get(&key) else {
+        return (StatusCode::NOT_FOUND, "nepoznat uredjaj").into_response();
+    };
+    let base = {
+        let profiles = state.profiles.read().await;
+        profiles.get(&record.profile_id).cloned().unwrap_or_else(|| profiles.generic().clone())
+    };
+    let id = profile_id_from_key(&key);
+    match state.capture.profile_toml(&key, &base, &id) {
+        Some(text) => ([("content-type", "text/plain; charset=\"utf-8\"")], text).into_response(),
+        None => (StatusCode::INTERNAL_SERVER_ERROR, "profil nije generiran").into_response(),
+    }
+}
+
+async fn api_streams(State(state): State<AppState>) -> Response {
+    let streams = state.sessions.active();
+    let hw = state.sessions.hw();
+    axum::Json(json!({
+        "active": streams.len(),
+        "max_concurrent": state.sessions.max_concurrent(),
+        "available_slots": state.sessions.available_slots(),
+        "hw": hw.summary(),
+        "encoders": hw.available.iter().map(|hw| hw.name()).collect::<Vec<_>>(),
+        "streams": streams,
+    }))
+    .into_response()
+}
+
+/// Zasto bi ovaj objekt isao kao transcode — za uredjaj koji pita (bez ffmpeg-a).
+async fn api_decision(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let node = {
+        let catalog = state.catalog.read().await;
+        catalog.get(&id).cloned()
+    };
+    let Some(node) = node else {
+        return (StatusCode::NOT_FOUND, "nepoznat objekt").into_response();
+    };
+    let profile = profile_for(&state, &headers, Some(peer)).await;
+
+    if !state.media_probe.is_known(&node.path) {
+        let probe = state.media_probe.clone();
+        let path = node.path.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            probe.probe(&path);
+        })
+        .await;
+    }
+
+    let engine = PlaybackEngine::new(
+        &profile,
+        state.sessions.hw(),
+        &state.media_probe,
+        state.config.transcode.enabled,
+    );
+    let info = state.media_probe.get(&node.path);
+    let summary = engine.decision_summary(&node);
+    let file_name = rustiio_upnp::escape_path_segment(&node.file_name());
+    axum::Json(json!({
+        "object_id": node.id,
+        "title": node.title,
+        "profile": profile.id,
+        "profile_name": profile.name,
+        "mode": summary.as_ref().map(|(mode, _)| mode.clone()),
+        "reasons": summary.as_ref().map(|(_, reasons)| reasons.clone()),
+        "resource": match summary {
+            Some((mode, _)) if !mode.starts_with("direct") => PlaybackEngine::transcode_path(&node),
+            _ => format!("/res/{}/{file_name}", node.id),
+        },
+        "media": info.map(|info| json!({
+            "container": info.container,
+            "duration_ms": info.duration_ms,
+            "bitrate_kbps": info.bitrate_kbps,
+            "video": info.video.map(|video| json!({
+                "codec": video.codec,
+                "width": video.width,
+                "height": video.height,
+                "bitrate_kbps": video.bitrate_kbps,
+            })),
+            "audio": info.audio.map(|audio| json!({
+                "codec": audio.codec,
+                "channels": audio.channels,
+            })),
+        })),
+    }))
+    .into_response()
+}
+
+/// `ua:SEC_HHP_[TV]UE55MU6172/1.0` → `device-sec-hhp-tv-ue55mu6172-1-0`.
+fn profile_id_from_key(key: &str) -> String {
+    let cleaned: String =
+        key.to_ascii_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+    let mut id = String::from("device-");
+    let mut last_dash = false;
+    for c in cleaned.chars() {
+        if c == '-' {
+            if !last_dash {
+                id.push('-');
+            }
+            last_dash = true;
+        } else {
+            id.push(c);
+            last_dash = false;
+        }
+    }
+    let id = id.trim_end_matches('-').to_string();
+    id.chars().take(60).collect()
+}
+
 // --------------------------------------------------------------- REST i web
 
 async fn api_status(State(state): State<AppState>) -> Response {
@@ -384,10 +867,22 @@ async fn api_status(State(state): State<AppState>) -> Response {
         "http_port": state.config.server.http_port,
         "ssdp": state.config.server.ssdp,
         "transcode_enabled": state.config.transcode.enabled,
+        "transcode": {
+            "hw": state.sessions.hw().summary(),
+            "encoders": state.sessions.hw().available.iter().map(|hw| hw.name()).collect::<Vec<_>>(),
+            "max_concurrent": state.sessions.max_concurrent(),
+            "active": state.sessions.active().len(),
+        },
+        "profiles": {
+            "count": state.profiles.read().await.all().len(),
+            "dir": state.profiles_dir().display().to_string(),
+            "devices": state.capture.len(),
+        },
         "views": state.config.library.views,
         "uptime_secs": state.uptime_secs(),
         "update_id": catalog.update_id,
         "items": catalog.len(),
+        "media_probed": state.media_probe.len(),
         "counts": counts,
         "roots": roots,
         "subscriptions": state.gena.len(),
@@ -550,6 +1045,7 @@ mod tests {
             "http://127.0.0.1:8200".to_string(),
             Catalog::default(),
             ScanOptions::default(),
+            rustiio_profiles::builtin::load(),
         )
     }
 

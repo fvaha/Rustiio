@@ -17,6 +17,8 @@ rustiio-upnp = { path = "crates/rustiio-upnp" }
 rustiio-library = { path = "crates/rustiio-library" }
 rustiio-cds = { path = "crates/rustiio-cds" }
 rustiio-http = { path = "crates/rustiio-http" }
+rustiio-profiles = { path = "crates/rustiio-profiles" }
+rustiio-transcode = { path = "crates/rustiio-transcode" }
 rustiio-server = { path = "crates/rustiio-server" }
 
 anyhow = "1"
@@ -35,6 +37,7 @@ tokio-util = { version = "0.7", features = ["io"] }
 axum = "0.8"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
+futures-core = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"

@@ -21,8 +21,26 @@ pub struct BrowseRequest {
     pub sort_criteria: String,
 }
 
-/// Sve sto CDS treba znati o serveru (bez ovoga bi lista argumenata rasla svakom fazom).
+/// Kako server zeli posluziti objekt. `None` iz [`PlaybackResolver`]-a znaci
+/// "originalni fajl" (direct play).
 #[derive(Debug, Clone)]
+pub struct Playback {
+    /// Putanja bez `base_url`-a, npr. `/tr/5/film.mkv`.
+    pub path: String,
+    /// `protocolInfo` za taj resurs (bez PN-a kad je transcode).
+    pub protocol_info: String,
+}
+
+/// Server odlucuje (profil uredjaja + transcode engine), CDS samo ispise.
+///
+/// Trait je namjerno ovako mali: `rustiio-cds` ne zna nista o profilima ni ffmpeg-u.
+pub trait PlaybackResolver {
+    fn resolve(&self, node: &Node) -> Option<Playback>;
+}
+
+/// Sve sto CDS treba znati o serveru (bez ovoga bi lista argumenata rasla svakom fazom).
+///
+/// `Debug`/`Default` su rucno napisani jer `playback` je trait objekt (nije Debug).
 pub struct BrowseOptions<'a> {
     /// `http://192.168.1.10:8200`
     pub base_url: &'a str,
@@ -32,11 +50,36 @@ pub struct BrowseOptions<'a> {
     pub views: bool,
     /// Koliko objekata ide u "Nedavno dodano".
     pub recent_limit: u32,
+    /// Ako uredjaj ne moze original, server daje drugu putanju (transcode).
+    pub playback: Option<&'a dyn PlaybackResolver>,
+}
+
+impl std::fmt::Debug for BrowseOptions<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BrowseOptions")
+            .field("base_url", &self.base_url)
+            .field("max_results", &self.max_results)
+            .field("views", &self.views)
+            .field("recent_limit", &self.recent_limit)
+            .field("playback", &self.playback.is_some())
+            .finish()
+    }
+}
+
+impl Default for BrowseOptions<'_> {
+    fn default() -> Self {
+        Self { base_url: "", max_results: MAX_RESULTS, views: true, recent_limit: 20, playback: None }
+    }
 }
 
 impl<'a> BrowseOptions<'a> {
     pub fn new(base_url: &'a str) -> Self {
-        Self { base_url, max_results: MAX_RESULTS, views: true, recent_limit: 20 }
+        Self { base_url, ..Self::default() }
+    }
+
+    pub fn with_playback(mut self, playback: &'a dyn PlaybackResolver) -> Self {
+        self.playback = Some(playback);
+        self
     }
 }
 
@@ -110,7 +153,7 @@ pub fn browse(
 
     let node = catalog.get(object_id).ok_or(CdsError::NoSuchObject)?;
     if metadata_only {
-        let object = node_to_object(node, catalog, options.base_url);
+        let object = node_to_object(node, catalog, options);
         return Ok(BrowseOutcome { didl: render_didl(&[object]), total: 1, returned: 1, update_id });
     }
 
@@ -145,7 +188,7 @@ fn paginate(
         .take(wanted as usize)
         .map(|child| match views::find(&child.id) {
             Some(view) => view_object(view, catalog, options),
-            None => node_to_object(child, catalog, options.base_url),
+            None => node_to_object(child, catalog, options),
         })
         .collect();
 
@@ -157,7 +200,7 @@ fn view_object(view: View, catalog: &Catalog, options: &BrowseOptions<'_>) -> Ob
 }
 
 /// Pretvori cvor kataloga u DIDL objekt s resursima (i titlom, ako ga ima).
-pub fn node_to_object(node: &Node, catalog: &Catalog, base_url: &str) -> Object {
+pub fn node_to_object(node: &Node, catalog: &Catalog, options: &BrowseOptions<'_>) -> Object {
     if node.is_container() {
         let child_count = catalog.children(&node.id).len() as u32;
         return Object::container(&node.id, &node.parent_id, &node.title, child_count);
@@ -174,8 +217,23 @@ pub fn node_to_object(node: &Node, catalog: &Catalog, base_url: &str) -> Object 
         _ => didl::CLASS_VIDEO_ITEM,
     };
 
-    let url = format!("{base_url}/res/{}/{file_name}", node.id);
-    let mut resource = Resource::new(&url, &info.to_protocol_info()).with_size(node.size);
+    // Ako uredjaj ne moze original, server vrati drugu putanju (remux/transcode) —
+    // tada velicina i trajanje originala ne vrijede.
+    let playback = options.playback.and_then(|resolver| resolver.resolve(node));
+    let (url, protocol_info, size): (String, String, Option<u64>) = match &playback {
+        Some(playback) => {
+            (format!("{}{}", options.base_url, playback.path), playback.protocol_info.clone(), None)
+        }
+        None => (
+            format!("{}/res/{}/{file_name}", options.base_url, node.id),
+            info.to_protocol_info(),
+            Some(node.size),
+        ),
+    };
+    let mut resource = Resource::new(&url, &protocol_info);
+    if let Some(size) = size {
+        resource = resource.with_size(size);
+    }
 
     if let Some(subtitle) = &node.subtitle {
         let sub_name = escape_path_segment(
@@ -183,7 +241,7 @@ pub fn node_to_object(node: &Node, catalog: &Catalog, base_url: &str) -> Object 
         );
         let sub_ext =
             subtitle.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-        let sub_url = format!("{base_url}/sub/{}/{sub_name}", node.id);
+        let sub_url = format!("{}/sub/{}/{sub_name}", options.base_url, node.id);
         resource = resource.with_caption(&sub_url, &sub_ext);
     }
 
@@ -196,7 +254,7 @@ pub fn node_to_object(node: &Node, catalog: &Catalog, base_url: &str) -> Object 
         let sub_name = escape_path_segment(
             &subtitle.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
         );
-        let sub_url = format!("{base_url}/sub/{}/{sub_name}", node.id);
+        let sub_url = format!("{}/sub/{}/{sub_name}", options.base_url, node.id);
         let sub_info = protocol::guess_for_ext(&sub_ext);
         object = object.with_resource(
             Resource::new(&sub_url, &sub_info.to_protocol_info())
@@ -281,6 +339,7 @@ mod tests {
             max_results: MAX_RESULTS,
             views: true,
             recent_limit: 20,
+            playback: None,
         }
     }
 

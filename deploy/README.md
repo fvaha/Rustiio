@@ -45,6 +45,33 @@ macOS: `rustiio run` u pozadini ili `launchd` plist.
 Windows: `rustiio.exe run` + Task Scheduler ("At startup"), ili `sc.exe create`
 nad `rustiio.exe` (uz `RUSTIIO_CONFIG_DIR` u varijablama okoline).
 
+## Profili uređaja
+
+Uz `config.toml`, u istom direktoriju (`RUSTIIO_CONFIG_DIR`) može stajati `profiles/` s
+dodatnim `*.toml` profilima. Profil s istim `id` pregazi ugrađeni. Reload bez restarta:
+
+```bash
+curl -X POST localhost:8200/api/profiles/reload
+curl -s localhost:8200/api/profiles | jq
+curl -s -H 'User-Agent: SEC_HHP_[TV]UE55MU6172/1.0' localhost:8200/api/decision/5 | jq
+```
+
+Ako TV nije prepoznat, pusti ga da nas zamoli bilo što, pa pogledaj `/api/devices`
+(recept iz capturea) i uzmi generirani TOML s `/api/profile/<key>`.
+
+## GPU transcode
+
+`docker-compose.yml` već traži nvidia GPU (`deploy.resources.reservations.devices`).
+Na hostu treba `nvidia-container-toolkit`; provjera da ffmpeg u kontejneru vidi NVENC:
+
+```bash
+docker exec rustiio ffmpeg -hide_banner -encoders | grep nvenc
+curl -s localhost:8200/api/status | jq '.transcode'
+```
+
+Ako GPU nije proslijeđen, Rustiio to sam primijeti i pada na softverski `libx264`
+(vidi `notes` u `/api/status`) — transcode i dalje radi, samo troši CPU.
+
 ## Paralelno sa Serviio
 
 Rustiio i Serviio se ne sukobljavaju: drugi DLNA server na istoj mreži je normalna

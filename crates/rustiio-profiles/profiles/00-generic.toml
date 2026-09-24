@@ -1,0 +1,33 @@
+# Fallback za uredjaje koje ne prepoznajemo.
+#
+# Namjerno konzervativno: pretpostavljamo "prosjecan DLNA uredjaj" (H.264 + AAC,
+# do 1080p), a capture + UI sluze da se ovo zamijeni stvarnim podacima.
+id = "generic"
+name = "Generic DLNA"
+description = "Nepoznat uredjaj — pretpostavke prosjecnog DLNA klijenta."
+
+[match]
+# Bez pravila: ovaj profil se koristi samo kad nista drugo ne upali.
+
+[video]
+containers = ["mp4", "mkv", "ts", "m2ts", "mov", "avi"]
+codecs = ["h264", "mpeg2video"]
+max_width = 1920
+max_height = 1080
+max_bitrate_kbps = 20000
+
+[audio]
+codecs = ["aac", "mp3", "ac3"]
+max_channels = 2
+
+[subtitles]
+mode = "soft"
+formats = ["srt", "vtt"]
+
+[transcode]
+container = "mpegts"
+video_codec = "h264"
+audio_codec = "aac"
+audio_channels = 2
+max_bitrate_kbps = 12000
+allow_remux = true

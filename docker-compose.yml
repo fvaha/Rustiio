@@ -16,3 +16,12 @@ services:
       - ./deploy/config:/config
       # Medijske mape s hosta — prilagodi svojima (read-only je dovoljno).
       - /home/vaha/multimedia:/media:ro
+    # GPU za transcode (NVENC na GTX 1050 Ti). Bez ovoga ffmpeg u kontejneru
+    # vidi samo softverski libx264. Treba nvidia-container-toolkit na hostu.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

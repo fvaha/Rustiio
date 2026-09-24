@@ -1,0 +1,27 @@
+# Kodi (bivsi XBMC) — kao VLC, pusta gotovo sve.
+id = "kodi"
+name = "Kodi"
+description = "Kodi: svi kodeci i kontejneri, soft titlovi, direct play."
+
+[match]
+user_agent = ["Kodi", "XBMC"]
+friendly_name = ["Kodi", "XBMC"]
+
+[video]
+containers = ["mp4", "m4v", "mkv", "ts", "m2ts", "mts", "webm", "avi", "mov", "mpg", "mpeg", "wmv", "flv", "vob", "ogv", "divx"]
+codecs = ["h264", "hevc", "av1", "vp8", "vp9", "mpeg2video", "mpeg4", "vc1", "wmv3", "theora"]
+max_width = 7680
+max_height = 4320
+max_bitrate_kbps = 200000
+
+[audio]
+codecs = ["aac", "mp3", "ac3", "eac3", "dts", "truehd", "flac", "opus", "vorbis", "pcm_s16le", "mp2"]
+max_channels = 8
+
+[subtitles]
+mode = "soft"
+formats = ["srt", "vtt", "ass", "ssa", "sub"]
+
+[transcode]
+max_bitrate_kbps = 40000
+max_height = 1080

@@ -1,0 +1,292 @@
+//! Gradnja i pokretanje ffmpeg naredbe.
+//!
+//! Sve sto ovdje nastaje je `Vec<String>` argumenata — pa se lako testira bez
+//! pokretanja ijednog procesa. Pokretanje ([`spawn`]) je odvojeno od gradnje.
+
+use std::path::Path;
+
+use anyhow::Context;
+use tokio::process::{Child, Command};
+
+use crate::decision::{Decision, PlaybackMode};
+use crate::hwaccel;
+
+#[derive(Debug, Clone)]
+pub struct StartRequest<'a> {
+    pub input: &'a Path,
+    /// Ekstenzija izvornog fajla (za `-bsf` kad idemo u MPEG-TS).
+    pub source_ext: &'a str,
+    pub decision: &'a Decision,
+    pub ffmpeg_path: &'a str,
+    /// Odakle poceti (seek u transcode streamu).
+    pub start_at_ms: Option<u64>,
+    /// Vanjski titl koji se upecava (samo ako `decision.burn_subtitles`).
+    pub subtitle: Option<&'a Path>,
+}
+
+/// Argumenti za ffmpeg koji na stdout pise MPEG-TS (ili fragmented MP4).
+pub fn build_args(request: &StartRequest<'_>) -> Vec<String> {
+    let decision = request.decision;
+    let mut args: Vec<String> = Vec::new();
+
+    push(&mut args, &["-hide_banner", "-loglevel", "error", "-nostdin"]);
+
+    if let Some(start_ms) = request.start_at_ms.filter(|value| *value > 0) {
+        args.push("-ss".to_string());
+        args.push(format!("{:.3}", start_ms as f64 / 1000.0));
+    }
+
+    args.push("-i".to_string());
+    args.push(request.input.display().to_string());
+
+    // Prvi video i prvi audio — ostalo TV ionako ne koristi.
+    // Kod audio-only transcodea videa nema u izlazu.
+    let audio_only = matches!(decision.mode, PlaybackMode::Transcode { video: false, audio: true });
+    if !audio_only {
+        push(&mut args, &["-map", "0:v:0"]);
+    }
+    push(&mut args, &["-map", "0:a:0?"]);
+
+    match &decision.mode {
+        PlaybackMode::Remux => {
+            args.push("-c".to_string());
+            args.push("copy".to_string());
+            if decision.container == "mpegts" && needs_annexb(request.source_ext) {
+                push(&mut args, &["-bsf:v", "h264_mp4toannexb"]);
+            }
+        }
+        PlaybackMode::Transcode { .. } => {
+            if let Some(encoder) = &decision.video_encoder {
+                args.push("-c:v".to_string());
+                args.push(encoder.clone());
+                args.extend(hwaccel::encoder_args(
+                    decision.hw,
+                    decision.video_bitrate_kbps.unwrap_or(0),
+                    decision.container == "mpegts" && !needs_annexb(request.source_ext),
+                ));
+                if let Some(filters) = video_filters(request) {
+                    args.push("-vf".to_string());
+                    args.push(filters);
+                }
+            } else {
+                push(&mut args, &["-c:v", "copy"]);
+            }
+
+            if let Some(audio) = &decision.audio_encoder {
+                args.push("-c:a".to_string());
+                args.push(audio.clone());
+                push(&mut args, &["-b:a", "192k"]);
+                if let Some(channels) = decision.audio_channels {
+                    args.push("-ac".to_string());
+                    args.push(channels.to_string());
+                }
+            } else {
+                push(&mut args, &["-c:a", "copy"]);
+            }
+        }
+        PlaybackMode::Direct => {}
+    }
+
+    match decision.container.as_str() {
+        "mp4" => push(&mut args, &["-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4"]),
+        _ => push(&mut args, &["-f", "mpegts", "-muxdelay", "0", "-muxpreload", "0"]),
+    }
+
+    // MPEG-TS bez ovoga zna dati "non monotonically increasing dts" na seeku.
+    push(&mut args, &["-fflags", "+genpts"]);
+    args.push("pipe:1".to_string());
+    args
+}
+
+/// Skaliranje i/ili upecavanje titla — jedan `-vf` lanac.
+fn video_filters(request: &StartRequest<'_>) -> Option<String> {
+    let decision = request.decision;
+    let mut filters: Vec<String> = Vec::new();
+
+    if let Some(max_height) = decision.max_height.filter(|value| *value > 0) {
+        filters.push(format!("scale=-2:'min({max_height},ih)'"));
+    }
+    if decision.burn_subtitles {
+        if let Some(subtitle) = request.subtitle {
+            filters.push(format!("subtitles={}", escape_filter_path(subtitle)));
+        }
+    }
+    if decision.hw == hwaccel::HwAccel::Vaapi {
+        filters.push("format=nv12,hwupload".to_string());
+    }
+
+    if filters.is_empty() { None } else { Some(filters.join(",")) }
+}
+
+/// FFmpeg filter sintaksa trazi escapane `:`, `'` i `\` u putanjama.
+fn escape_filter_path(path: &Path) -> String {
+    let text = path.display().to_string();
+    let escaped = text.replace('\\', "\\\\").replace(':', "\\:").replace('\'', "\\'");
+    format!("filename='{escaped}'")
+}
+
+/// MP4/MOV drze H.264 u AVCC obliku; MPEG-TS trazi Annex B.
+fn needs_annexb(ext: &str) -> bool {
+    matches!(ext.trim().trim_start_matches('.').to_ascii_lowercase().as_str(), "mp4" | "m4v" | "mov" | "3gp")
+}
+
+fn push(args: &mut Vec<String>, values: &[&str]) {
+    args.extend(values.iter().map(|value| value.to_string()));
+}
+
+/// Pokreni ffmpeg; stdout je stream koji ide pravo u HTTP tijelo.
+pub fn spawn(request: &StartRequest<'_>) -> anyhow::Result<Child> {
+    let args = build_args(request);
+    tracing::debug!(ffmpeg = request.ffmpeg_path, args = %args.join(" "), "pokrecem ffmpeg");
+
+    Command::new(request.ffmpeg_path)
+        .args(&args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .with_context(|| format!("ne mogu pokrenuti {}", request.ffmpeg_path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::decision::Decision;
+    use crate::hwaccel::{HwAccel, HwSupport};
+    use std::path::PathBuf;
+
+    fn decision(mode: PlaybackMode, container: &str, encoder: Option<&str>, hw: HwAccel) -> Decision {
+        Decision {
+            mode,
+            reasons: Vec::new(),
+            protocol_info: String::new(),
+            mime: "video/mp2t".to_string(),
+            container: container.to_string(),
+            video_encoder: encoder.map(|value| value.to_string()),
+            video_bitrate_kbps: Some(8000),
+            max_height: None,
+            audio_encoder: Some("aac".to_string()),
+            audio_channels: Some(2),
+            burn_subtitles: false,
+            hw,
+        }
+    }
+
+    fn request<'a>(
+        decision: &'a Decision,
+        source_ext: &'a str,
+        input: &'a Path,
+        subtitle: Option<&'a Path>,
+    ) -> StartRequest<'a> {
+        StartRequest { input, source_ext, decision, ffmpeg_path: "ffmpeg", start_at_ms: None, subtitle }
+    }
+
+    #[test]
+    fn remux_copies_streams_into_mpegts() {
+        let decision = decision(PlaybackMode::Remux, "mpegts", None, HwAccel::None);
+        let input = PathBuf::from("/media/film.mkv");
+        let args = build_args(&request(&decision, "mkv", &input, None));
+        let joined = args.join(" ");
+
+        assert!(joined.contains("-i /media/film.mkv"), "{joined}");
+        assert!(joined.contains("-c copy"), "{joined}");
+        assert!(joined.contains("-f mpegts"), "{joined}");
+        assert!(joined.contains("-map 0:a:0?"), "{joined}");
+        assert!(!joined.contains("-c:v h264"), "remux ne re-enkodira: {joined}");
+        assert!(joined.ends_with("pipe:1"), "{joined}");
+    }
+
+    #[test]
+    fn remux_from_mp4_to_ts_adds_annexb_bitstream_filter() {
+        let decision = decision(PlaybackMode::Remux, "mpegts", None, HwAccel::None);
+        let input = PathBuf::from("/media/film.mp4");
+        let args = build_args(&request(&decision, "mp4", &input, None));
+        assert!(args.join(" ").contains("-bsf:v h264_mp4toannexb"), "{args:?}");
+    }
+
+    #[test]
+    fn nvenc_transcode_has_encoder_rate_control_and_aac_audio() {
+        let decision = decision(
+            PlaybackMode::Transcode { video: true, audio: true },
+            "mpegts",
+            Some("h264_nvenc"),
+            HwAccel::Nvenc,
+        );
+        let input = PathBuf::from("/media/hevc.mkv");
+        let joined = build_args(&request(&decision, "mkv", &input, None)).join(" ");
+
+        assert!(joined.contains("-c:v h264_nvenc"), "{joined}");
+        assert!(joined.contains("-preset p4"), "{joined}");
+        assert!(joined.contains("-c:a aac"), "{joined}");
+        assert!(joined.contains("-ac 2"), "{joined}");
+        assert!(joined.contains("-f mpegts"), "{joined}");
+    }
+
+    #[test]
+    fn seek_adds_input_flag_with_fractional_seconds() {
+        let decision = decision(
+            PlaybackMode::Transcode { video: true, audio: true },
+            "mpegts",
+            Some("libx264"),
+            HwAccel::None,
+        );
+        let input = PathBuf::from("/media/film.mkv");
+        let mut req = request(&decision, "mkv", &input, None);
+        req.start_at_ms = Some(90_500);
+        let joined = build_args(&req).join(" ");
+        assert!(joined.contains("-ss 90.500"), "{joined}");
+        // -ss mora biti PRIJE -i (brzi seek)
+        assert!(joined.find("-ss").unwrap() < joined.find("-i ").unwrap());
+    }
+
+    #[test]
+    fn burn_in_adds_subtitles_filter_before_frame() {
+        let mut decision = decision(
+            PlaybackMode::Transcode { video: true, audio: true },
+            "mpegts",
+            Some("libx264"),
+            HwAccel::None,
+        );
+        decision.burn_subtitles = true;
+        decision.max_height = Some(720);
+        let input = PathBuf::from("/media/film.mkv");
+        let subtitle = PathBuf::from("/media/Film (2026)/Film (2026).srt");
+        let joined = build_args(&request(&decision, "mkv", &input, Some(&subtitle))).join(" ");
+        assert!(joined.contains("scale=-2:'min(720,ih)'"), "{joined}");
+        assert!(joined.contains("subtitles=filename='/media/Film (2026)/Film (2026).srt'"), "{joined}");
+        assert!(joined.contains("-vf"), "{joined}");
+    }
+
+    #[test]
+    fn mp4_output_uses_fragmented_flags() {
+        let decision = decision(
+            PlaybackMode::Transcode { video: true, audio: true },
+            "mp4",
+            Some("h264_videotoolbox"),
+            HwAccel::VideoToolbox,
+        );
+        let input = PathBuf::from("/media/film.mkv");
+        let joined = build_args(&request(&decision, "mkv", &input, None)).join(" ");
+        assert!(joined.contains("-movflags frag_keyframe+empty_moov+default_base_moof"), "{joined}");
+        assert!(joined.contains("-f mp4"), "{joined}");
+        assert!(!joined.contains("mpegts"), "{joined}");
+    }
+
+    #[test]
+    fn filters_escape_special_characters_in_paths() {
+        let path = PathBuf::from("/media/a:b'd.mkv");
+        assert_eq!(escape_filter_path(&path), "filename='/media/a\\:b\\'d.mkv'");
+    }
+
+    #[test]
+    fn hw_support_is_only_used_for_transcode() {
+        let support = HwSupport {
+            available: vec![HwAccel::Nvenc],
+            preferred: HwAccel::Nvenc,
+            notes: Vec::new(),
+            subtitles_filter: false,
+        };
+        assert_eq!(hwaccel::video_encoder(support.preferred, "h264"), Some("h264_nvenc"));
+    }
+}

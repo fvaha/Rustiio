@@ -1,6 +1,6 @@
 [package]
-name = "rustiio-server"
-description = "Orkestracija: axum router, state i REST API"
+name = "rustiio-transcode"
+description = "Decision engine i ffmpeg: direct play, remux ili transcode — po profilu uredjaja"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,17 +10,11 @@ repository.workspace = true
 
 [dependencies]
 rustiio-core.workspace = true
-rustiio-cds.workspace = true
-rustiio-http.workspace = true
 rustiio-library.workspace = true
 rustiio-profiles.workspace = true
-rustiio-transcode.workspace = true
 rustiio-upnp.workspace = true
+
 anyhow.workspace = true
-axum.workspace = true
-futures-core.workspace = true
-tower-http.workspace = true
-serde_json.workspace = true
-tokio.workspace = true
-tokio-util.workspace = true
+serde.workspace = true
+tokio = { workspace = true, features = ["process"] }
 tracing.workspace = true

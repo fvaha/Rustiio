@@ -1,0 +1,30 @@
+# Sony BRAVIA (Android TV i stariji Linux modeli).
+id = "sony-bravia"
+name = "Sony BRAVIA"
+description = "BRAVIA: H.264 + HEVC (od 2015), 4K, srt titlovi."
+
+[match]
+user_agent = ["BRAVIA", "Sony", "Linux/Sony"]
+friendly_name = ["BRAVIA", "Sony"]
+
+[video]
+containers = ["mp4", "mkv", "ts", "m2ts", "webm", "avi"]
+codecs = ["h264", "hevc", "vp9", "mpeg2video"]
+max_width = 3840
+max_height = 2160
+max_bitrate_kbps = 50000
+
+[audio]
+codecs = ["aac", "mp3", "ac3", "eac3", "dts", "flac", "opus", "vorbis"]
+max_channels = 6
+
+[subtitles]
+mode = "soft"
+formats = ["srt", "vtt", "ass"]
+
+[transcode]
+container = "mpegts"
+video_codec = "h264"
+audio_codec = "aac"
+audio_channels = 2
+max_bitrate_kbps = 14000

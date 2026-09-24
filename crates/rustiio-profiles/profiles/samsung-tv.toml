@@ -1,0 +1,36 @@
+# Samsung Smart TV 2016+ (K/M/Q serija, Tizen) — HEVC i 4K rade sami.
+id = "samsung-tv"
+name = "Samsung TV (2016+, Tizen)"
+description = "MU/RU/Q serija i noviji: H.264 + HEVC, 4K, srt titlovi, TimeSeekRange."
+
+[match]
+user_agent = ["SEC_HHP", "Samsung", "Tizen"]
+friendly_name = ["[TV]", "Samsung"]
+
+[video]
+containers = ["mp4", "m4v", "mkv", "ts", "m2ts", "mts", "webm", "avi", "mov"]
+codecs = ["h264", "hevc", "vp9", "mpeg2video", "mpeg4"]
+max_width = 3840
+max_height = 2160
+max_bitrate_kbps = 60000
+
+[audio]
+codecs = ["aac", "mp3", "ac3", "eac3", "dts", "flac", "vorbis", "opus", "truehd"]
+max_channels = 6
+
+[subtitles]
+mode = "soft"
+formats = ["srt", "vtt"]
+
+[transcode]
+container = "mpegts"
+video_codec = "h264"
+audio_codec = "aac"
+audio_channels = 2
+max_bitrate_kbps = 16000
+allow_remux = true
+
+[dlna]
+op = "01"
+time_seek = true
+send_pn = true

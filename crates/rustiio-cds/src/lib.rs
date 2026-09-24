@@ -7,6 +7,7 @@ pub mod browse;
 pub mod views;
 
 pub use browse::{
-    BrowseOptions, BrowseOutcome, BrowseRequest, CdsError, MAX_RESULTS, browse, sort_capabilities,
+    BrowseOptions, BrowseOutcome, BrowseRequest, CdsError, MAX_RESULTS, Playback, PlaybackResolver, browse,
+    node_to_object, sort_capabilities,
 };
 pub use views::View;

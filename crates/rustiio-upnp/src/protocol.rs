@@ -36,6 +36,22 @@ impl ProtocolInfo {
         self
     }
 
+    pub fn with_op(mut self, op: &str) -> Self {
+        self.op = Some(op.to_string());
+        self
+    }
+
+    pub fn with_flags(mut self, flags: &str) -> Self {
+        self.flags = Some(flags.to_string());
+        self
+    }
+
+    /// Bez `DLNA.ORG_PN` — neki uredjaji (Xbox, PlayStation) se na njega zbune.
+    pub fn without_pn(mut self) -> Self {
+        self.pn = None;
+        self
+    }
+
     /// Bez ikakvih DLNA dodataka — samo `http-get:*:mime:*`.
     pub fn bare(mime: &str) -> Self {
         Self { mime: mime.to_string(), pn: None, op: None, ci: None, flags: None }
@@ -98,6 +114,21 @@ pub fn mime_for_ext(ext: &str) -> &'static str {
         "ass" | "ssa" => "text/x-ssa",
         _ => "application/octet-stream",
     }
+}
+
+/// procjena DLNA profila s vrijednostima iz profila uredjaja.
+pub fn guess_for_ext_with(ext: &str, op: &str, flags: &str, send_pn: bool) -> ProtocolInfo {
+    let mut info = guess_for_ext(ext);
+    if !send_pn {
+        info.pn = None;
+    }
+    if !op.trim().is_empty() {
+        info.op = Some(op.trim().to_string());
+    }
+    if !flags.trim().is_empty() {
+        info.flags = Some(flags.trim().to_string());
+    }
+    info
 }
 
 /// Najbolja procjena DLNA profila za zadanu ekstenziju.

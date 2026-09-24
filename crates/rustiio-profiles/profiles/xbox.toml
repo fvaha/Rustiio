@@ -1,0 +1,35 @@
+# Xbox (One / Series X|S) — DLNA klijent koji ne voli DLNA.ORG_PN.
+id = "xbox"
+name = "Xbox"
+description = "Xbox: H.264/HEVC, 4K; PN u protocolInfo zna smetati."
+
+[match]
+user_agent = ["Xbox", "Microsoft-Windows", "MediaPlayer"]
+friendly_name = ["Xbox"]
+
+[video]
+containers = ["mp4", "mkv", "ts", "avi", "mov", "wmv"]
+codecs = ["h264", "hevc", "mpeg4", "vc1", "wmv3"]
+max_width = 3840
+max_height = 2160
+max_bitrate_kbps = 60000
+
+[audio]
+codecs = ["aac", "mp3", "ac3", "eac3", "dts", "flac"]
+max_channels = 8
+
+[subtitles]
+mode = "soft"
+formats = ["srt", "vtt"]
+
+[transcode]
+container = "mp4"
+video_codec = "h264"
+audio_codec = "aac"
+audio_channels = 2
+max_bitrate_kbps = 20000
+
+[dlna]
+# Xbox se zna zbuniti na PN-u — saljemo samo MIME.
+send_pn = false
+op = "01"

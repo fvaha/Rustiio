@@ -1,0 +1,30 @@
+# Philips TV (i Streamium/HTS uredjaji) — cesto traze TimeSeekRange.
+id = "philips-tv"
+name = "Philips TV"
+description = "Philips: H.264 do 1080p, seek preko TimeSeekRange umjesto Range."
+
+[match]
+user_agent = ["Philips", "Streamium", "HTS"]
+friendly_name = ["Philips"]
+
+[video]
+containers = ["mp4", "mkv", "ts", "m2ts", "avi", "mpg"]
+codecs = ["h264", "mpeg2video", "hevc", "mpeg4"]
+max_width = 1920
+max_height = 1080
+max_bitrate_kbps = 25000
+
+[audio]
+codecs = ["aac", "mp3", "ac3", "eac3", "dts"]
+max_channels = 6
+
+[transcode]
+container = "mpegts"
+video_codec = "h264"
+audio_codec = "aac"
+audio_channels = 2
+max_bitrate_kbps = 12000
+
+[dlna]
+op = "01"
+time_seek = true

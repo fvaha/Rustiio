@@ -1,5 +1,6 @@
 //! `rustiio run` — digne HTTP server i SSDP oglasavanje.
 
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -11,6 +12,7 @@ use rustiio_core::{
     DEVICE_TYPE, DeviceIdentity, SERVICE_CONNECTION_MANAGER, SERVICE_CONTENT_DIRECTORY, server_header,
 };
 use rustiio_library::{ScanOptions, scan};
+use rustiio_profiles::builtin;
 use rustiio_server::{AppState, router};
 use rustiio_ssdp::{SsdpConfig, start as start_ssdp};
 use tokio::net::TcpListener;
@@ -45,8 +47,41 @@ pub async fn execute(config_path: PathBuf, args: RunArgs) -> anyhow::Result<()> 
         "biblioteka skenirana"
     );
 
-    let state =
-        AppState::new(Arc::new(config.clone()), identity.clone(), base_url.clone(), catalog, scan_options);
+    // Profili: ugradjeni + korisnicki iz `<config_dir>/profiles` (isti `id` pregazi ugradjeni).
+    let profiles_dir = if config.profiles.dir.as_os_str().is_empty() {
+        config_path.parent().unwrap_or_else(|| std::path::Path::new(".")).join("profiles")
+    } else {
+        config.profiles.dir.clone()
+    };
+    let mut profiles = builtin::load();
+    let custom = profiles.load_dir(&profiles_dir);
+    if !custom.is_empty() {
+        info!(count = custom.len(), dir = %profiles_dir.display(), "korisnicki profili");
+    }
+    info!(count = profiles.all().len(), "profili uredjaja pripremljeni");
+
+    let state = AppState::new(
+        Arc::new(config.clone()),
+        identity.clone(),
+        base_url.clone(),
+        catalog,
+        scan_options,
+        profiles,
+    )
+    .with_profiles_dir(profiles_dir);
+
+    // Metapodaci u pozadini: dok TV pregledava biblioteku, kodeci su vec procitani
+    // (bez ovoga bi prvi Browse s transcodeom cekao ffprobe za svaki film).
+    {
+        let warm = state.clone();
+        tokio::spawn(async move {
+            let probed = warm.warm_media_cache(5000).await;
+            if probed > 0 {
+                info!(probed, "metapodaci pripremljeni");
+            }
+        });
+    }
+
     let app = router(state);
 
     let listener = TcpListener::bind((config.server.bind.as_str(), port))
@@ -73,7 +108,9 @@ pub async fn execute(config_path: PathBuf, args: RunArgs) -> anyhow::Result<()> 
 
     print_banner(&identity.friendly_name, &base_url, &config_path);
 
-    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
     if let Some(handle) = ssdp_handle {
         handle.stop().await;

@@ -2,9 +2,9 @@
 
 > Univerzalni DLNA/UPnP media server u Rustu. Jedan binarni fajl, radi svugdje, s web sučeljem i desktop GUI-jem.
 
-**Status:** Faza 0 (temelj) ✅ + Faza 1 (DLNA MVP) ✅ + Faza 2 (profili + transcode) u izradi
+**Status:** Faza 0 (temelj) ✅ + Faza 1 (DLNA MVP) ✅ + Faza 2 (profili + transcode) ✅ + Faza 3 (biblioteka) u izradi
 **Zadnja izmjena:** 2026-09-24
-**Živo:** `Rustiio (box)` radi na 192.168.1.10:8200 (Docker, host mreža) — 168 objekata (95 video, 44 audio, 29 mapa).
+**Živo:** `Rustiio (box)` radi na 192.168.1.10:8200 (Docker, host mreža, NVENC) — 168 objekata (95 video, 44 audio, 29 mapa), 17 ugrađenih profila.
 
 ---
 
@@ -124,22 +124,25 @@
 - [x] virtualne kategorije na vrhu stabla: **Video / Nedavno dodano / Muzika / Slike** (`rustiio-cds/src/views.rs`), uključivo/isključivo kroz config (`views`, `recent_limit`)
 - [x] Docker slika + `docker-compose.yml` (host mreža zbog SSDP-a) + systemd unit + `rustiio health` za healthcheck
 - [x] deploy na .10 (Docker) — Rustiio se oglašava u LAN-u uz router i Mac instancu
-- [ ] prvi test na oba TV-a (Samsung MU6172 + Sharp Aquos) — čeka korisnika
+- [x] **prvi test na TV-u: Samsung MU6172 vidi izvor i pušta film** (potvrdio korisnik, 2026-09-24)
+- [ ] Sharp Aquos — nije još provjeren
 - [ ] zapisati što svaki uređaj traži (`tcpdump -i any udp port 1900` + `--log debug`) — mehanizam je spreman (media zahtjevi se logiraju s `range`/`time_seek`/`UA`), zapis slijedi kad se TV spoji
 
 **Acceptance:** TV pušta 1080p H.264 MKV direktno, seek radi, titl se vidi ako ga TV podržava. → *direct play i seek dokazani kroz HTTP/ffprobe; TV potvrda preostaje.*
 
-### Faza 2 — Profili + transcode (~1–2 tjedna)
+### Faza 2 — Profili + transcode ✅ (2026-09-24)
 
-- [ ] `rustiio-profiles`: TOML baza (ugrađena, `profiles/*.toml`, ~40 univerzalnih za Samsung/LG/Sony/Panasonic/Philips/Android TV/Xbox/PS/VLC/Kodi) + matcher po `User-Agent`, `friendlyName`, IP-u
-- [ ] **Capture način**: server logira UA + tražene `protocolInfo`/headere po uređaju; UI dugme "napravi profil od ovog uređaja"
-- [ ] `rustiio-transcode`: decision engine (container + kodek + profil + bitrate → direct/remux/transcode), builder ffmpeg naredbe, HW accel detekcija (NVENC/VAAPI/QSV/VideoToolbox/AMF → test 1 s testnim izvorom), `max_concurrent`, queue
-- [ ] integracija s postojećim `ffmpeg-wrapper`/`ffmpeg-samsung` na .10 (NVENC na 1050 Ti)
-- [ ] titlovi: srt/vtt kao `res` + `sec:CaptionInfoEx`; burn-in kao opcija profila
-- [ ] remux u MPEG-TS (`-c copy`) kad TV ne voli MKV
-- [ ] logika: seek u transcode streamu (restart ffmpeg s `-ss`)
+- [x] `rustiio-profiles`: TOML baza (17 ugrađenih u `crates/rustiio-profiles/profiles/*.toml`) + matcher po `User-Agent`, `friendlyName`, IP-u
+- [x] **Capture način**: server bilježi UA + DLNA zaglavlja po uređaju (`/api/devices`) i generira TOML profil iz stvarnog prometa (`/api/profile/{key}`) — "napravi profil od ovog uređaja" je tako već danas jedna `curl` naredba (dugme u UI-ju dolazi u Fazi 4)
+- [x] `rustiio-transcode`: decision engine (kontejner + kodek + rezolucija + kanali → direct/remux/transcode, s razlozima), builder ffmpeg naredbe, HW accel detekcija **testnim enkodiranjem**, `max_concurrent` + red čekanja
+- [x] integracija na .10: **NVENC na GTX 1050 Ti** (GPU proslijeđen u kontejner)
+- [x] titlovi: srt/vtt kao `res` + `sec:CaptionInfoEx`; burn-in kao opcija profila (uz provjeru da ffmpeg ima `subtitles` filter — ako ga nema, titl ostaje soft umjesto praznog streama)
+- [x] remux u MPEG-TS/MP4 (`-c copy`) kad uređaj ne voli kontejner
+- [x] seek u transcode streamu: `TimeSeekRange` → ffmpeg s `-ss` + `npt=` u odgovoru
 
-**Acceptance:** HEVC film se pušta na uređaju koji ne podržava HEVC; NVENC radi na .10; profile editor u API-ju mijenja ponašanje bez restarta.
+**Acceptance:** HEVC film se pušta na uređaju koji ne podržava HEVC ✅; NVENC radi na .10 ✅; profil se mijenja bez restarta ✅ (`POST /api/profiles/reload`, dokazano na živoj instanci).
+
+**Što ostaje iz ove faze:** Sharp Aquos test; capture dugme u web UI-ju (Faza 4); profili za 3–4 uređaja koja još nisu viđena (dodaju se iz capturea kad se pojave).
 
 ### Faza 3 — Biblioteka + metapodaci (~2 tjedna)
 

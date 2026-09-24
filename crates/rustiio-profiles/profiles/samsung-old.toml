@@ -1,0 +1,40 @@
+# Stariji Samsung (C/D/E/F/H serija, 2010–2015): bez HEVC-a, cesto bez srt-a.
+#
+# Pravila namjerno NE hvataju `SEC_HHP` (to je noviji Tizen) — ovaj profil je rezerva
+# za modele koji se predstavljaju kao BD player ili DTV.
+id = "samsung-old"
+name = "Samsung TV (do 2015)"
+description = "Stariji Samsung: H.264 do 1080p, titlovi se upecavaju (burn-in)."
+
+[match]
+user_agent = ["SEC_HHP_BD", "Samsung DTV", "DLNADOC/1.50 SEC_HHP_BD"]
+friendly_name = ["E Series", "F Series", "H Series", "Series 5", "Series 6"]
+
+[video]
+containers = ["mp4", "mkv", "ts", "m2ts", "avi", "wmv", "mpg"]
+codecs = ["h264", "mpeg2video", "mpeg4", "wmv3", "vc1"]
+max_width = 1920
+max_height = 1080
+max_bitrate_kbps = 25000
+
+[audio]
+codecs = ["aac", "mp3", "ac3", "dts", "eac3"]
+max_channels = 6
+
+[subtitles]
+# Stariji modeli ne citaju vanjski srt — titl ide u sliku.
+mode = "burn"
+formats = []
+
+[transcode]
+container = "mpegts"
+video_codec = "h264"
+audio_codec = "aac"
+audio_channels = 2
+max_bitrate_kbps = 10000
+allow_remux = true
+
+[dlna]
+op = "01"
+time_seek = true
+send_pn = true

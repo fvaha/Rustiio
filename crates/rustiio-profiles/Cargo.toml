@@ -1,6 +1,6 @@
 [package]
-name = "rustiio-library"
-description = "Biblioteka: skeniranje mapa u katalog + ffprobe metapodaci (Faza 3: SQLite)"
+name = "rustiio-profiles"
+description = "Profili uredaja: sto TV sam moze, a sto mu Rustiio mora pripremiti"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,8 +9,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-rusqlite = { version = "0.40.2", features = ["bundled"] }
-rustiio-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 tracing.workspace = true
