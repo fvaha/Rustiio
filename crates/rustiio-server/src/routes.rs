@@ -58,6 +58,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/continue", get(api_continue))
         .route("/api/playstate/{id}", get(api_playstate).put(api_set_playstate).delete(api_clear_playstate))
         .route("/api/decision/{id}", get(api_decision))
+        .route("/art/{id}", get(api_art))
+        .route("/api/posters", get(api_posters))
+        .route("/api/posters/refresh", post(api_posters_refresh))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
 }
@@ -217,12 +220,14 @@ async fn content_directory_control(
                 &state.media_probe,
                 state.config.transcode.enabled,
             );
+            let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone());
             let options = BrowseOptions {
                 base_url: &state.base_url,
                 max_results: MAX_RESULTS,
                 views: state.config.library.views,
                 recent_limit: state.config.library.recent_limit,
                 playback: Some(&engine),
+                art: Some(&art),
             };
             match browse(&catalog, &browse_request, &options) {
                 Ok(outcome) => {
@@ -263,12 +268,14 @@ async fn content_directory_control(
                 &state.media_probe,
                 state.config.transcode.enabled,
             );
+            let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone());
             let options = BrowseOptions {
                 base_url: &state.base_url,
                 max_results: MAX_RESULTS,
                 views: state.config.library.views,
                 recent_limit: state.config.library.recent_limit,
                 playback: Some(&engine),
+                art: Some(&art),
             };
             let criteria = rustiio_cds::parse_criteria(&search_request.criteria);
             // FTS upit nad lokalnim indeksom je sub-milisekundni; držimo ga u istoj dretvi
@@ -1287,6 +1294,73 @@ fn header_str(headers: &HeaderMap, name: &str) -> Option<String> {
 
 fn arg(args: &std::collections::HashMap<String, String>, name: &str) -> Option<String> {
     args.get(name).cloned()
+}
+
+/// Poster objekta (`upnp:albumArtURI` u DIDL-u pokazuje ovamo).
+async fn api_art(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    let Ok(item_id) = id.parse::<i64>() else {
+        return (StatusCode::BAD_REQUEST, "neispravan id").into_response();
+    };
+    let store = state.store.clone();
+    let dir = state.enricher.art_dir().to_path_buf();
+    let found =
+        tokio::task::spawn_blocking(move || crate::art::serve(&store, &dir, item_id)).await.ok().flatten();
+    match found {
+        Some((path, content_type)) => match tokio::fs::read(&path).await {
+            Ok(bytes) => (
+                [
+                    (header::CONTENT_TYPE, content_type.to_string()),
+                    (header::CACHE_CONTROL, "public, max-age=86400".to_string()),
+                ],
+                bytes,
+            )
+                .into_response(),
+            Err(_) => (StatusCode::NOT_FOUND, "slika nedostupna").into_response(),
+        },
+        None => (StatusCode::NOT_FOUND, "nema postera").into_response(),
+    }
+}
+
+/// Stanje postera: imamo / cekaju / probano bez uspjeha.
+async fn api_posters(State(state): State<AppState>) -> Response {
+    let store = state.store.clone();
+    let stats =
+        tokio::task::spawn_blocking(move || rustiio_library::store::items::poster_stats(&store)).await;
+    match stats {
+        Ok(Ok(stats)) => axum::Json(json!({
+            "have": stats.have,
+            "pending": stats.pending,
+            "none": stats.none,
+            "tmdb_key": state.enricher.has_api_key(),
+            "art_dir": state.enricher.art_dir().display().to_string(),
+        }))
+        .into_response(),
+        Ok(Err(error)) => (StatusCode::INTERNAL_SERVER_ERROR, format!("baza: {error}")).into_response(),
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("posao: {error}")).into_response(),
+    }
+}
+
+/// Ponovni prolaz: zaboravi "nema ga" i dohvati sto fali (radi u pozadini).
+async fn api_posters_refresh(State(state): State<AppState>) -> Response {
+    let store = state.store.clone();
+    let reset =
+        tokio::task::spawn_blocking(move || rustiio_library::store::items::reset_missing_posters(&store))
+            .await;
+    match reset {
+        Ok(Ok(reset)) => {
+            let worker = state.clone();
+            tokio::task::spawn_blocking(move || {
+                for _ in 0..20 {
+                    if crate::state::enrich_posters(&worker, 25, true) == 0 {
+                        break;
+                    }
+                }
+            });
+            axum::Json(json!({ "reset": reset, "started": true })).into_response()
+        }
+        Ok(Err(error)) => (StatusCode::INTERNAL_SERVER_ERROR, format!("baza: {error}")).into_response(),
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, format!("posao: {error}")).into_response(),
+    }
 }
 
 #[cfg(test)]

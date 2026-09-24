@@ -69,7 +69,11 @@ pub async fn execute(config_path: PathBuf, args: RunArgs) -> anyhow::Result<()> 
         profiles,
     )
     .with_profiles_dir(profiles_dir)
-    .with_store(open_store(&config_path)?);
+    .with_store(open_store(&config_path)?)
+    // Poster kes ide uz config (`<config_dir>/art`), a kljuc (ako ga ima) iz okoline.
+    .with_enricher(rustiio_library::metadata::Enricher::from_env(
+        config_path.parent().unwrap_or_else(|| std::path::Path::new(".")).join("art"),
+    ));
 
     // Metapodaci iz baze odmah (bez ffprobe-a), ostatak u pozadini.
     let from_db = state.warm_probe_from_db();

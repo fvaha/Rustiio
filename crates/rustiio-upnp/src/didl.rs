@@ -75,6 +75,15 @@ impl Object {
         self.date = Some(date);
         self
     }
+
+    /// Poster objekta (`upnp:albumArtURI` s `dlna:profileID="JPEG_TN"`).
+    ///
+    /// Zovemo ga samo kad URL stvarno postoji — prazan `albumArtURI` neki TV-i
+    /// pokušavaju dohvatiti u nedogled.
+    pub fn with_album_art(mut self, url: &str) -> Self {
+        self.album_art = Some(url.to_string());
+        self
+    }
 }
 
 #[derive(Debug, Clone)]

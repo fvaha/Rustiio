@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use rustiio_core::DeviceIdentity;
 use rustiio_core::config::Config;
+use rustiio_library::metadata::Enricher;
 use rustiio_library::{Catalog, DurationProbe, MediaProbe, NodeKind, ScanOptions, Store, scan};
 use rustiio_profiles::{Capture, ProfileSet};
 use rustiio_transcode::{HwSupport, SessionManager, detect_hw};
@@ -38,6 +39,8 @@ pub struct AppState {
     pub sessions: Arc<SessionManager>,
     /// SQLite indeks: stabilni id-evi, pretraga (FTS), watch-state.
     pub store: Arc<Store>,
+    /// Dohvat postera (TMDB / Wikipedia / TVmaze / Cover Art) — jedan agent i jedan kes.
+    pub enricher: Arc<Enricher>,
     /// Mapa s korisnickim profilima.
     profiles_dir: Arc<PathBuf>,
     started: Instant,
@@ -47,6 +50,12 @@ impl AppState {
     /// Isti kao [`AppState::new`], ali s izricitom mapom profila.
     pub fn with_profiles_dir(mut self, dir: PathBuf) -> Self {
         self.profiles_dir = Arc::new(dir);
+        self
+    }
+
+    /// Poster helper (kljucevi iz okoline, kes u `<config_dir>/art`).
+    pub fn with_enricher(mut self, enricher: Enricher) -> Self {
+        self.enricher = Arc::new(enricher);
         self
     }
 
@@ -114,6 +123,7 @@ impl AppState {
             capture: Arc::new(Capture::new()),
             sessions,
             store,
+            enricher: Arc::new(Enricher::from_env(PathBuf::from("art"))),
             profiles_dir: Arc::new(PathBuf::from("profiles")),
             started: Instant::now(),
         }
@@ -262,4 +272,48 @@ impl AppState {
         }
         pending
     }
+}
+
+/// Jedan prolaz obogacivanja: poster za objekte koji ga jos nemaju.
+///
+/// Blokira (mreza + disk), pa ga zove pozadinski zadatak; vraca koliko je
+/// objekata obradjeno.
+///
+/// `mark_missing` je namjerno odvojeno: u pozadinskom prolazu (pokretanje
+/// servera) **ne** pisemo "nema ga" — bez mreze bi cijela biblioteka bila
+/// oznacena kao gotova zauvijek. Rucni `/api/posters/refresh` smije.
+pub fn enrich_posters(state: &AppState, limit: usize, mark_missing: bool) -> usize {
+    let pending = match rustiio_library::store::items::items_needing_poster(&state.store, limit) {
+        Ok(pending) => pending,
+        Err(error) => {
+            warn!(%error, "ne mogu citati objekte bez postera");
+            return 0;
+        }
+    };
+    let pending_len = pending.len();
+    let mut found = 0;
+    for (id, path) in pending {
+        let poster = state.enricher.poster_for(id, &path);
+        let (file, source) = match &poster {
+            Some(poster) => (
+                poster.path.file_name().map(|name| name.to_string_lossy().to_string()),
+                poster.source.map(|source| source.as_str().to_string()),
+            ),
+            None if mark_missing => (None, Some("none".to_string())),
+            None => continue,
+        };
+        if let Err(error) =
+            rustiio_library::store::items::update_poster(&state.store, id, file.as_deref(), source.as_deref())
+        {
+            warn!(id, %error, "ne mogu upisati poster");
+            continue;
+        }
+        if poster.is_some() {
+            found += 1;
+        }
+    }
+    if found > 0 {
+        info!(found, processed = pending_len, "posteri dohvaceni");
+    }
+    pending_len
 }

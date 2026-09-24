@@ -120,3 +120,20 @@ fn local_poster_beats_the_network() {
 
     let _ = std::fs::remove_dir_all(&media);
 }
+
+#[test]
+#[ignore = "trazi mrezu i TMDB_API_KEY"]
+fn api_key_uses_the_official_tmdb_api() {
+    let key = std::env::var("TMDB_API_KEY").expect("TMDB_API_KEY u okolini");
+    let art = temp_art("tmdb-api");
+    let enricher = Enricher::new(Some(key), art);
+    assert!(enricher.has_api_key());
+
+    let query = guess_title("Sicario.2015.1080p.BluRay.x264-[YTS.AM].mkv");
+    let poster = enricher.poster_for_query(11, &query).expect("poster preko API-ja");
+    let bytes = std::fs::read(&poster.path).expect("poster na disku");
+    report("TMDB API", &query, poster.source.map(|source| source.as_str()), bytes.len());
+    assert!(cache::is_image(&bytes));
+    // S kljucem ide API, ne web scrape.
+    assert_eq!(poster.source.map(|source| source.as_str()), Some("tmdb"));
+}

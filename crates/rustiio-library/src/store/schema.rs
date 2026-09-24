@@ -7,7 +7,13 @@
 use rusqlite::Connection;
 
 /// Verzija sheme; raste sa svakom izmjenom tablica (`PRAGMA user_version`).
-pub const VERSION: i32 = 1;
+pub const VERSION: i32 = 2;
+
+/// v1 → v2: dva stupca za poster (datoteka u kešu + odakle je došao).
+const MIGRATION_V2: &str = r#"
+ALTER TABLE items ADD COLUMN poster        TEXT;
+ALTER TABLE items ADD COLUMN poster_source TEXT;
+"#;
 
 const SCHEMA_V1: &str = r#"
 -- Mape koje skeniramo (labela + putanja + vrsta).
@@ -111,6 +117,11 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 
     if current < 1 {
         conn.execute_batch(SCHEMA_V1)?;
+    }
+
+    // v2: poster koji je server našao/dohvatio (`art/<id>.<ext>` u config mapi).
+    if current < 2 {
+        conn.execute_batch(MIGRATION_V2)?;
     }
 
     conn.pragma_update(None, "user_version", VERSION)?;

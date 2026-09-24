@@ -118,8 +118,8 @@ pub fn continue_watching(
         let item = ItemRow::from_row(row)?;
         let position = Position {
             item_id: item.id,
-            position_ms: row.get(9)?,
-            duration_ms: row.get(10)?,
+            position_ms: row.get(ItemRow::COLUMN_COUNT)?,
+            duration_ms: row.get(ItemRow::COLUMN_COUNT + 1)?,
             played: row.get::<_, i64>(11)? != 0,
             updated_at: row.get(12)?,
         };

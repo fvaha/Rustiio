@@ -407,6 +407,7 @@ mod tests {
             views: false,
             recent_limit: 5,
             playback: None,
+            art: None,
         };
         let request = SearchRequest {
             container_id: "0".to_string(),

@@ -52,6 +52,8 @@ pub struct BrowseOptions<'a> {
     pub recent_limit: u32,
     /// Ako uredjaj ne moze original, server daje drugu putanju (transcode).
     pub playback: Option<&'a dyn PlaybackResolver>,
+    /// Tko zna ima li objekt poster (`albumArtURI` u DIDL-u).
+    pub art: Option<&'a dyn ArtLookup>,
 }
 
 impl std::fmt::Debug for BrowseOptions<'_> {
@@ -62,19 +64,33 @@ impl std::fmt::Debug for BrowseOptions<'_> {
             .field("views", &self.views)
             .field("recent_limit", &self.recent_limit)
             .field("playback", &self.playback.is_some())
+            .field("art", &self.art.is_some())
             .finish()
     }
 }
 
 impl Default for BrowseOptions<'_> {
     fn default() -> Self {
-        Self { base_url: "", max_results: MAX_RESULTS, views: true, recent_limit: 20, playback: None }
+        Self {
+            base_url: "",
+            max_results: MAX_RESULTS,
+            views: true,
+            recent_limit: 20,
+            playback: None,
+            art: None,
+        }
     }
 }
 
 impl<'a> BrowseOptions<'a> {
     pub fn new(base_url: &'a str) -> Self {
         Self { base_url, ..Self::default() }
+    }
+
+    /// Poster dolazi iz baze (server), pa CDS samo ispiše URL koji mu server da.
+    pub fn with_art(mut self, art: &'a dyn ArtLookup) -> Self {
+        self.art = Some(art);
+        self
     }
 
     pub fn with_playback(mut self, playback: &'a dyn PlaybackResolver) -> Self {
@@ -121,6 +137,14 @@ impl CdsError {
             CdsError::Index(msg) => format!("Search index unavailable: {msg}"),
         }
     }
+}
+
+/// Tko zna postoji li poster za objekt.
+///
+/// CDS ne zna za bazu: server odgovori "ovaj id ima sliku" ili "nema".
+/// Ako nema, `albumArtURI` se **ne** ispisuje — TV-i loše reagiraju na URL koji 404-a.
+pub trait ArtLookup: Send + Sync {
+    fn art_url(&self, item_id: &str) -> Option<String>;
 }
 
 /// Sta podrzavamo u `SortCriteria` (TV-i ovo pitaju prije nego sortiraju).
@@ -251,6 +275,13 @@ pub fn node_to_object(node: &Node, catalog: &Catalog, options: &BrowseOptions<'_
 
     let mut object = Object::item(&node.id, &node.parent_id, &node.title, class).with_resource(resource);
 
+    // Poster: samo ako ga baza stvarno ima (inače bi TV dobio URL koji 404-a).
+    if let Some(art) = options.art {
+        if let Some(url) = art.art_url(&node.id) {
+            object = object.with_album_art(&url);
+        }
+    }
+
     // Titl ide i kao zaseban resurs — neki klijenti (Kodi, VLC) citaju samo taj oblik.
     if let Some(subtitle) = &node.subtitle {
         let sub_ext =
@@ -344,6 +375,7 @@ mod tests {
             views: true,
             recent_limit: 20,
             playback: None,
+            art: None,
         }
     }
 

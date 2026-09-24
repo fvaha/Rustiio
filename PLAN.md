@@ -158,10 +158,13 @@
 - [x] **Posteri i metapodaci, red izvora**: lokalno (`poster.jpg`/`folder.jpg`/`<film>.jpg`) → TMDB → Wikipedia → TVmaze → Cover Art Archive, s kešom na disku (`<config_dir>/art/<id>.<ext>`, atomički upis)
 - [x] **Ključ nije obavezan** — provjereno živim pozivima (vidi tablicu niže); `TMDB_API_KEY` u okolini uključuje službeni API, prazno znači keyless
 - [x] **Pacing prema hostu** (MusicBrainz traži 1 req/s i vraća 503) + ponovni pokušaji na 429/5xx
-- [ ] Poster u DIDL-u (`albumArtURI` + `JPEG_TN`), `/art/{id}` ruta i `poster` stupac u bazi + pozadinsko obogaćivanje
+- [x] **Poster u DIDL-u** (`upnp:albumArtURI` + `dlna:profileID="JPEG_TN"`), ruta `/art/{id}` (404 kad nema postera), `poster`/`poster_source` stupca u bazi (schema v2) i pozadinsko obogaćivanje na pokretanju
+- [x] `/api/posters` (imamo / čekaju / probano) + `/api/posters/refresh` (ručni prolaz; zaboravi "nema ga")
 - [ ] titlovi: auto-dohvat (OpenSubtitles/titlovi.com) i madlad HR prijevodi kao modul
 
-**Acceptance:** 10k fajlova indeksirano < 30 s, delta scan < 2 s, poster se vidi u VLC-u i na TV-u, "nastavi gledati" radi. → *indeks, stabilni id-evi, pretraga, watch-state i dohvat postera rade; poster u DIDL-u i delta scan preostaju.*
+**Acceptance:** 10k fajlova indeksirano < 30 s, delta scan < 2 s, poster se vidi u VLC-u i na TV-u, "nastavi gledati" radi. → *indeks, stabilni id-evi, pretraga, watch-state, dohvat postera i poster u DIDL-u rade (živo provjereno s pravim TMDB ključem); delta scan i provjera na TV-u preostaju.*
+
+**Živa provjera postera** (`scratch/rustiio-faza3/verify_posters.py`, prolaz 2026-09-24): server s `TMDB_API_KEY` iz `~/.hermes/.env` → 2 objekta bez postera → nakon prolaza `have=2`, baza `3.jpg (tmdb)`, `5.jpg (tmdb)`; `GET /art/3` → **200 image/jpeg 92 090 B** (JPEG magija provjerena), `/art/5` → 200 99 078 B; DIDL za oba nosi `<upnp:albumArtURI dlna:profileID="JPEG_TN">http://192.168.1.3:8200/art/3</upnp:albumArtURI>`; objekt bez postera → **nema** `albumArtURI` i `/art/{id}` vraća 404.
 
 ### Izvori postera — provjereno živim pozivima (2026-09-24)
 

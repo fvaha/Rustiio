@@ -90,7 +90,7 @@ fn search_match(
     );
     let mut statement = conn.prepare(&sql)?;
     let mapper = |row: &rusqlite::Row<'_>| {
-        Ok(SearchHit { item: ItemRow::from_row(row)?, rank: row.get::<_, f64>(9)? })
+        Ok(SearchHit { item: ItemRow::from_row(row)?, rank: row.get::<_, f64>(ItemRow::COLUMN_COUNT)? })
     };
     if let Some(kind) = kind {
         let rows = statement.query_map(params![match_query, limit as i64, kind], mapper)?;

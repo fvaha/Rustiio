@@ -82,6 +82,10 @@ pub struct ItemRow {
     pub series: Option<String>,
     pub season: Option<u32>,
     pub episode: Option<u32>,
+    /// Ime datoteke postera u kešu (`42.jpg`) ili `None`.
+    pub poster: Option<String>,
+    /// Odakle poster (`local`, `tmdb`, `wikipedia`, ...).
+    pub poster_source: Option<String>,
 }
 
 impl ItemRow {
@@ -101,11 +105,17 @@ impl ItemRow {
             series: row.get(6)?,
             season: row.get::<_, Option<i64>>(7)?.map(|season| season as u32),
             episode: row.get::<_, Option<i64>>(8)?.map(|episode| episode as u32),
+            poster: row.get(9)?,
+            poster_source: row.get(10)?,
         })
     }
 
     /// Kolone moraju odgovarati `from_row` — jedno mjesto za sve upite.
-    pub const COLUMNS: &'static str = "id, path, title, kind, size, duration_ms, series, season, episode";
+    pub const COLUMNS: &'static str =
+        "id, path, title, kind, size, duration_ms, series, season, episode, poster, poster_source";
+
+    /// Koliko kolona `COLUMNS` vraća (dodatne kolone u upitima idu iza njih).
+    pub const COLUMN_COUNT: usize = 11;
 }
 
 /// Upisi/popravi mapu (root) i vrati njen id.
@@ -336,4 +346,77 @@ pub fn series_list(store: &Store) -> rusqlite::Result<Vec<(String, i64)>> {
     )?;
     let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
     rows.collect()
+}
+
+/// Upiši (ili obriši) poster objekta.
+///
+/// `poster` je ime datoteke u kešu (`42.jpg`), `source` je izvor
+/// (`local`, `tmdb`, `wikipedia`, ...). `None` znači "nema postera".
+pub fn update_poster(
+    store: &Store,
+    item_id: i64,
+    poster: Option<&str>,
+    source: Option<&str>,
+) -> rusqlite::Result<()> {
+    let conn = store.conn();
+    conn.execute(
+        "UPDATE items SET poster = ?2, poster_source = ?3 WHERE id = ?1",
+        params![item_id, poster, source],
+    )?;
+    Ok(())
+}
+
+/// Ime datoteke postera u kešu i odakle je došao.
+pub fn poster_of(store: &Store, item_id: i64) -> rusqlite::Result<Option<(String, Option<String>)>> {
+    let conn = store.conn();
+    let mut statement = conn.prepare("SELECT poster, poster_source FROM items WHERE id = ?1")?;
+    let mut rows = statement.query(params![item_id])?;
+    match rows.next()? {
+        Some(row) => Ok(row.get::<_, Option<String>>(0)?.map(|poster| (poster, row.get(1).unwrap_or(None)))),
+        None => Ok(None),
+    }
+}
+
+/// Video bez postera — za pozadinsko obogaćivanje (najstariji prvi, da je red stalan).
+pub fn items_needing_poster(store: &Store, limit: usize) -> rusqlite::Result<Vec<(i64, PathBuf)>> {
+    let conn = store.conn();
+    let mut statement = conn.prepare(
+        "SELECT id, path FROM items WHERE kind = 'video' AND poster IS NULL
+         ORDER BY added_at DESC, id ASC LIMIT ?1",
+    )?;
+    let rows = statement.query_map(params![limit as i64], |row| {
+        Ok((row.get::<_, i64>(0)?, PathBuf::from(row.get::<_, String>(1)?)))
+    })?;
+    rows.collect()
+}
+
+/// Zaboravi "probano, nema ga" — sljedeci prolaz ih pokusa ponovno.
+pub fn reset_missing_posters(store: &Store) -> rusqlite::Result<usize> {
+    let conn = store.conn();
+    conn.execute("UPDATE items SET poster_source = NULL WHERE poster_source = 'none'", [])
+}
+
+/// Koliko objekata ima poster, koliko ih ceka i koliko je probano bez uspjeha.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PosterStats {
+    pub have: i64,
+    pub pending: i64,
+    pub none: i64,
+}
+
+/// Stanje postera za `/api/posters`.
+pub fn poster_stats(store: &Store) -> rusqlite::Result<PosterStats> {
+    let conn = store.conn();
+    let have =
+        conn.query_row("SELECT COUNT(*) FROM items WHERE poster IS NOT NULL AND poster <> ''", [], |row| {
+            row.get(0)
+        })?;
+    let none =
+        conn.query_row("SELECT COUNT(*) FROM items WHERE poster_source = 'none'", [], |row| row.get(0))?;
+    let pending = conn.query_row(
+        "SELECT COUNT(*) FROM items WHERE kind = 'video' AND poster IS NULL AND poster_source IS NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(PosterStats { have, pending, none })
 }

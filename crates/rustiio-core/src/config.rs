@@ -101,6 +101,8 @@ pub struct LibrarySection {
     pub views: bool,
     /// Koliko objekata ide u "Nedavno dodano".
     pub recent_limit: u32,
+    /// Dohvacaj postera u pozadini (uz datoteku, pa TMDB/Wikipedia/TVmaze/Cover Art).
+    pub posters: bool,
     /// Prati mape i sam pokreni sken kad se datoteka doda ili obrise.
     pub watch: bool,
 }
@@ -113,6 +115,7 @@ impl Default for LibrarySection {
             max_depth: 8,
             views: true,
             recent_limit: 20,
+            posters: true,
             watch: true,
         }
     }
