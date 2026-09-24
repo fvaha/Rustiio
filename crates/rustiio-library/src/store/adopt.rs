@@ -117,8 +117,11 @@ mod tests {
 
         let first = adopt_catalog(&store, &mut catalog);
         assert_eq!(first.roots, 1);
-        assert_eq!(first.added, 5, "3 mape + 2 videa");
-        assert!(first.remapped >= 5);
+        assert_eq!(
+            first.added, 3,
+            "korijen + film + epizoda: mape se prazne jer epizode idu pod seriju, pa ih nema"
+        );
+        assert!(first.remapped >= 3);
 
         let film = catalog
             .of_kinds(&[NodeKind::Video])
@@ -172,7 +175,13 @@ mod tests {
         adopt_catalog(&store, &mut catalog);
 
         let episodes = super::items::by_kind(&store, "video", 50).unwrap();
-        let episode = episodes.iter().find(|item| item.title.contains("Zlo")).expect("epizoda");
+        // Epizoda se u bazi traži po seriji (naslov je sada čitljiv: `S01E03`), a serija
+        // dolazi iz imena datoteke — ne iz naslova za prikaz.
+        let episode = episodes
+            .iter()
+            .find(|item| item.series.as_deref() == Some("Zlo"))
+            .expect("epizoda sa serijom iz imena datoteke");
+        assert_eq!(episode.title, "S01E03", "u bazi je čitljiv naslov");
         assert_eq!(
             (episode.series.as_deref(), episode.season, episode.episode),
             (Some("Zlo"), Some(1), Some(3))

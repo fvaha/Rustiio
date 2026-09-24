@@ -37,7 +37,7 @@ impl ScanItem {
         };
         Some(Self {
             path: node.path.clone(),
-            parent: catalog.get(&node.parent_id).map(|parent| parent.path.clone()),
+            parent: parent_path(catalog, node),
             title: node.title.clone(),
             kind: kind.to_string(),
             ext: node
@@ -51,9 +51,22 @@ impl ScanItem {
                 .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|since| since.as_secs() as i64)
                 .unwrap_or(0),
-            series: crate::series::parse(&node.title),
+            series: crate::series::parse(&node.file_name()),
         })
     }
+}
+
+/// Putanja roditelja za bazu.
+///
+/// Kad je u katalogu roditelj izmišljen (serija/sezona koju smo složili), on nema putanju —
+/// tada uzimamo pravu mapu u kojoj datoteka leži, da baza ne ostane bez roditelja.
+fn parent_path(catalog: &Catalog, node: &Node) -> Option<PathBuf> {
+    if let Some(parent) = catalog.get(&node.parent_id) {
+        if !parent.path.as_os_str().is_empty() {
+            return Some(parent.path.clone());
+        }
+    }
+    node.path.parent().map(|dir| dir.to_path_buf())
 }
 
 /// Što je sken promijenio.

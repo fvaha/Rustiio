@@ -275,25 +275,33 @@ pub fn search_catalog(
 
 /// Objekt iz baze kao čvor kataloga (katalog je izvor istine za titlove i djecu).
 fn node_for(item: &ItemRow, catalog: &Catalog) -> Node {
-    if let Some(node) = catalog.get(&item.id.to_string()) {
-        return node.clone();
-    }
-    Node {
-        id: item.id.to_string(),
-        parent_id: String::new(),
-        title: item.title.clone(),
-        kind: match item.kind.as_str() {
-            "video" => NodeKind::Video,
-            "audio" => NodeKind::Audio,
-            "image" => NodeKind::Image,
-            _ => NodeKind::Container,
+    let mut node = match catalog.get(&item.id.to_string()) {
+        Some(node) => node.clone(),
+        None => Node {
+            id: item.id.to_string(),
+            parent_id: String::new(),
+            title: item.title.clone(),
+            kind: match item.kind.as_str() {
+                "video" => NodeKind::Video,
+                "audio" => NodeKind::Audio,
+                "image" => NodeKind::Image,
+                _ => NodeKind::Container,
+            },
+            path: item.path.clone(),
+            size: item.size,
+            modified: None,
+            children: Vec::new(),
+            subtitle: None,
         },
-        path: item.path.clone(),
-        size: item.size,
-        modified: None,
-        children: Vec::new(),
-        subtitle: None,
+    };
+    // U ravnom popisu (rezultati pretrage) epizoda mora nositi i ime serije — unutar
+    // sezone dovoljna je oznaka `S01E03`, ali u pretrazi `S01E03` ništa ne kaže.
+    if let Some(series) = item.series.as_deref().filter(|series| !series.is_empty()) {
+        if let (Some(season), Some(episode)) = (item.season, item.episode) {
+            node.title = format!("{series} S{season:02}E{episode:02}");
+        }
     }
+    node
 }
 
 /// Prihvaćamo li ovaj `SearchCriteria` na način da TV ne ostane bez ičega.

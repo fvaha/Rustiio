@@ -143,8 +143,9 @@ mod tests {
         let items = View::Video.items(&catalog, 20);
         let names: Vec<&str> = items.iter().map(|n| n.title.as_str()).collect();
         assert_eq!(items.len(), 2, "oba videa, iz svih podmapa: {names:?}");
-        assert!(names.contains(&"a"));
-        assert!(names.contains(&"b"));
+        // Naslovi su očišćeni za prikaz (malo ime se velikim slovom piše).
+        assert!(names.contains(&"A"));
+        assert!(names.contains(&"B"));
         assert_eq!(View::Video.count(&catalog, 20), 2);
         assert_eq!(View::Audio.count(&catalog, 20), 1);
         assert_eq!(View::Image.count(&catalog, 20), 0);

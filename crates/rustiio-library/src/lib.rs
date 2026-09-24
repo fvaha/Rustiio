@@ -4,8 +4,10 @@
 //! start). Faza 3 ga zamjenjuje SQLite indeksom s ffprobe metapodacima i stabilnim
 //! ID-jevima — struktura [`Catalog`] ostaje ista, pa CDS ne treba mijenjati.
 
+pub mod grouping;
 pub mod mediainfo;
 pub mod metadata;
+pub mod naming;
 pub mod probe;
 pub mod scan;
 pub mod series;

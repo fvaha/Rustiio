@@ -63,6 +63,16 @@ impl Catalog {
         self.map.get(id)
     }
 
+    /// Mijenjaj čvor na mjestu (npr. preslagivanje djece pri grupiranju serija).
+    pub fn get_mut(&mut self, id: &str) -> Option<&mut Node> {
+        self.map.get_mut(id)
+    }
+
+    /// Izbaci čvor iz kataloga (prazne mape nakon premještanja epizoda).
+    pub fn remove(&mut self, id: &str) -> Option<Node> {
+        self.map.remove(id)
+    }
+
     /// Djeca kao klonovi (mali broj po mapi; veliki direktoriji se paginiraju gore).
     pub fn children(&self, id: &str) -> Vec<Node> {
         self.map
@@ -225,6 +235,8 @@ pub fn scan(options: &ScanOptions) -> Catalog {
             children,
             subtitle: None,
         });
+        // Slaganje ide nakon umetanja korijena: serije u sezone i epizode, filmovi po abecedi.
+        crate::grouping::arrange(&mut catalog, &id, root.kind);
         root_children.push(id);
     }
 
@@ -469,6 +481,7 @@ mod tests {
         let root_child = catalog.get("1").expect("root child");
         let movies: Vec<Node> = catalog.children(&root_child.id);
         assert_eq!(movies.len(), 1);
+        // Naslov je očišćen za prikaz (iz imena datoteke + godina iz zagrada).
         assert_eq!(movies[0].title, "The Movie (2019)");
         assert_eq!(movies[0].size, 2048);
         assert!(movies[0].modified.is_some());

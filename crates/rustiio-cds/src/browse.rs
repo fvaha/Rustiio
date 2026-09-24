@@ -532,9 +532,10 @@ mod tests {
         let out = browse(&catalog, &request, &options()).expect("browse");
         assert_eq!(out.total, 4);
         assert_eq!(out.returned, 2);
-        assert!(out.didl.contains("<dc:title>b</dc:title>"));
-        assert!(out.didl.contains("<dc:title>c</dc:title>"));
-        assert!(!out.didl.contains("<dc:title>a</dc:title>"));
+        // Naslovi su očišćeni (`a` → `A`), a red je i dalje abecedni.
+        assert!(out.didl.contains("<dc:title>B</dc:title>"));
+        assert!(out.didl.contains("<dc:title>C</dc:title>"));
+        assert!(!out.didl.contains("<dc:title>A</dc:title>"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
