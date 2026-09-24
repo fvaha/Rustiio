@@ -219,14 +219,16 @@ a kartica na dashboardu pokazuje `mpegts · Apple VideoToolbox · h264_videotool
 
 ### Faza 5 — Desktop + pakiranje (~1–2 tjedna)
 
-- [ ] Tauri v2 šel: embedded core (bez zasebnog procesa) ili "connect na remote Rustiio", tray ikona, autostart, "otvori UI"
-- [ ] Installeri: `.deb`/`.rpm`/`.AppImage`, `.msi`/NSIS, `.dmg`; `brew` formula; Docker `linuxserver`-style slika
-- [ ] **ffmpeg u paketu** (odluka korisnika): statiční build po platformi + licenca uz njega; `<dir>/ffmpeg` pokraj binarnog fajla
-- [ ] **Sve platforme rade isto** — ista značajke svuda (bez "na Linuxu radi, na Windowsu ne")
-- [ ] **Box .10 bez Dockera**: native binarni fajl + systemd unit, ffmpeg u paketu (zamjena za Docker deploy)
-- [ ] systemd unit (User=vaha, Restart=on-failure) + Windows service + macOS launchd
-- [ ] auto-update (opcionalno, opt-in)
-- [ ] cross-compile u CI (x86_64/arm64 za Linux, Windows, macOS)
+- [x] Tauri v2 šel: `boot()` u pozadinskom threadu, prozor na lokalni server, zatvaranje prozora gasi i server
+- [x] Ikone za sve platforme (`tauri icon`), `.app` + `.dmg` (provjereno: montira se, sadrži `Rustiio.app` + `Applications`)
+- [x] **ffmpeg u paketu** kao Tauri sidecar — u paketu stoji `Contents/MacOS/{ffmpeg,ffprobe}` pokraj binarnog fajla
+- [x] `rustiio service install|uninstall|status` — macOS launchd (provjereno: `state = running`, čisto skidanje), Linux systemd, Windows `sc.exe`
+- [x] CI za izdanja (3 platforme + statični ffmpeg/ffprobe za svaku)
+- [x] Sučelje: **isto u app i na webu** — tanke trake za pomicanje, `-webkit-` prefiks za blur, biranje mape preglednikom servera (`/api/fs/list` + `FolderPicker`), **samo video** (bez Muzike i Slika)
+- [ ] Installeri za Linux/Windows provjeriti kroz CI (`.deb`/`.rpm`/`.AppImage`, `.msi`/NSIS) — nemam ta dva sustava lokalno
+- [ ] `brew` formula; auto-update (opcionalno, opt-in)
+- [ ] potpisivanje/notarizacija za macOS
+- [ ] **Box .10 bez Dockera**: native binarni fajl + systemd unit — instalirano, ali box još nema izdanje s Fazom 5
 
 **Acceptance:** instalacija na .10 u jednoj komandi; na Windowsu dupli klik + tray; na Macu drag u Applications.
 
