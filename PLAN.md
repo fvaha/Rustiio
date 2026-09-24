@@ -342,5 +342,9 @@ Korisnik: **sve platforme rade isto, ffmpeg je u paketu, box .10 se instalira di
   (kopirana u `/var/lib/rustiio`) → TV-i ne vide novi uređaj, id-evi ostaju isti.
 - Dokazano na boxu: `health` 200, `koristim prilozene alate uz program` (ffmpeg iz paketa),
   `hardversko ubrzanje dostupno hw="NVIDIA NVENC"` bez kontejnera, `0 rustiio kontejnera`.
+- **Posteri na boxu (prvi pravi prolaz, 2026-09-24 22:01):** `prolaz postera gotov processed=177
+  found=152 missing=0`; `/api/posters` → `have=152, tmdb_key=true`; keš `/var/lib/rustiio/art/` 152 slike;
+  DIDL: Filmovi 1/2 i **Serije 21/23** objekata s `albumArtURI`, `/art/{id}` vraća JPEG.
+  Objekti bez postera **ne** dobivaju `albumArtURI` (TV ne traži URL koji 404-a).
 - Otvoreno za Fazu 5: pravi **statični** ffmpeg po platformi (trenutno je na boxu kopija sistemskog),
   `.deb`/`.dmg`/`.msi` s tim istim rasporedom.
