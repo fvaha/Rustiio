@@ -39,6 +39,15 @@ pub enum Command {
     Init,
     /// Dohvati postere za videe koji ih nemaju (radi i dok server radi).
     Posters(PostersArgs),
+    /// Pusti server kao uslugu (systemd / launchd / Windows servis).
+    Service(ServiceArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ServiceArgs {
+    /// install = upiši i pokreni, uninstall = zaustavi i obriši, status = provjeri.
+    #[arg(value_enum)]
+    pub action: crate::cmd::service::Action,
 }
 
 impl Default for Command {

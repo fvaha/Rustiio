@@ -6,6 +6,7 @@ pub mod init;
 pub mod posters;
 pub mod probe;
 pub mod run;
+pub mod service;
 
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;

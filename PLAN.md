@@ -394,6 +394,18 @@ Serije → Dark Matter → Sezona 2 → [S02E05 · 1080p, S02E06 · 1080p] i Zlo
 
 **Otvoreno u Fazi 5:** bundle s ffmpeg-om probati lokalno (preuzeti statični macOS ffmpeg),
 `.deb`/`.rpm`/AppImage i `.msi` provjeriti kroz CI (Linux/Windows nisu na ovom stroju),
-naredba `rustiio service install|status` (systemd/launchd/Windows servis) i auto-start,
 potpisivanje/notarizacija za macOS te auto-update.
+
+**Usluga (`rustiio service install|uninstall|status`)** — `cmd/service/`, razdvojeno po
+platformama: `launchd.rs` (macOS, korisnički agent `~/Library/LaunchAgents/net.vaha.rustiio.plist`,
+dnevnik `~/Library/Logs/rustiio.log`, bez roota), `systemd.rs` (korisnička jedinica bez roota,
+sustavska ako se vrtimo kao root; `ExecStart` s navodnicima za putanje s razmacima),
+`windows.rs` (`sc create/delete`, traži povišene ovlasti). Moduli se prevode na svakoj
+platformi kako bi testovi provjerili generirani sadržaj svugdje, a `launchctl` se zove
+"tiho" (bez njegovih poruka korisniku) s lancem fallbackova.
+
+**Provjereno na macOS-u (2026-09-24 23:0x):** `service install` → plist upisan, `launchctl print`
+kaže `state = running` i `program` = naš binarni fajl, server odgovara na `/healthz`;
+`service uninstall` → bez poruka o greškama, plist obrisan, proces stao; `service status`
+prije i poslije daje točno stanje (upisana/radi).
 
