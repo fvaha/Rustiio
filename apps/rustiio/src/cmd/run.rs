@@ -24,6 +24,10 @@ pub async fn execute(config_path: PathBuf, args: RunArgs) -> anyhow::Result<()> 
     let mut config = Config::load_or_create(&config_path).context("ucitavanje configa")?;
     let identity = DeviceIdentity::ensure(&mut config, &config_path)?;
     let ip = resolve_ip(&config)?;
+    // Prvo alati: prilozeni uz binarni fajl imaju prednost pred PATH-om.
+    let (ffmpeg, ffprobe) = config.resolve_tools();
+    tracing::debug!(%ffmpeg, %ffprobe, "alati razrijeseni");
+
     let port = config.server.http_port;
     let base_url = format!("http://{ip}:{port}");
 
@@ -73,6 +77,7 @@ pub async fn execute(config_path: PathBuf, args: RunArgs) -> anyhow::Result<()> 
     // Poster kes ide uz config (`<config_dir>/art`), a kljuc (ako ga ima) iz okoline.
     .with_enricher(rustiio_library::metadata::Enricher::from_env(
         config_path.parent().unwrap_or_else(|| std::path::Path::new(".")).join("art"),
+        &config.network.ip_family,
     ));
 
     // Metapodaci iz baze odmah (bez ffprobe-a), ostatak u pozadini.

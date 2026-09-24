@@ -80,6 +80,8 @@ impl AppState {
         // Baza u memoriji dok `with_store` ne preda pravu datoteku. Id-evi se
         // dodjeljuju odmah (isti kod kao za datoteku) da `/api/search` radi i bez nje.
         let store = Arc::new(Store::open_memory().expect("SQLite u memoriji"));
+        // Dohvat postera: obitelj adresa iz configa (kucne mreze cesto imaju polomljen IPv6).
+        let enricher = Enricher::from_env(PathBuf::from("art"), &config.network.ip_family);
         let mut catalog = catalog;
         crate::library::sync_catalog(&store, &mut catalog);
 
@@ -123,7 +125,7 @@ impl AppState {
             capture: Arc::new(Capture::new()),
             sessions,
             store,
-            enricher: Arc::new(Enricher::from_env(PathBuf::from("art"))),
+            enricher: Arc::new(enricher),
             profiles_dir: Arc::new(PathBuf::from("profiles")),
             started: Instant::now(),
         }

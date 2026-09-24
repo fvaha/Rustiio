@@ -8,3 +8,4 @@ web/node_modules
 web/dist
 apps/rustiio-desktop/src-tauri/target
 /scratch
+.env

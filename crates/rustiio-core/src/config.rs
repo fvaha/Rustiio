@@ -14,9 +14,25 @@ pub struct Config {
     pub library: LibrarySection,
     pub transcode: TranscodeSection,
     pub profiles: ProfilesSection,
+    pub network: NetworkSection,
 }
 
 impl Config {
+    /// Javi gdje se stvarno nalaze ffmpeg/ffprobe.
+    ///
+    /// Prilozeni uz binarni fajl imaju prednost pred `PATH`-om, pa paket radi
+    /// odmah po instaliranju i na racunalu bez ffmpeg-a.
+    pub fn resolve_tools(&mut self) -> (String, String) {
+        let ffmpeg = crate::tools::resolve(&self.transcode.ffmpeg_path);
+        let ffprobe = crate::tools::resolve(&self.transcode.ffprobe_path);
+        if ffmpeg != self.transcode.ffmpeg_path || ffprobe != self.transcode.ffprobe_path {
+            tracing::info!(ffmpeg = %ffmpeg, ffprobe = %ffprobe, "koristim prilozene alate uz program");
+        }
+        self.transcode.ffmpeg_path = ffmpeg.clone();
+        self.transcode.ffprobe_path = ffprobe.clone();
+        (ffmpeg, ffprobe)
+    }
+
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let text = std::fs::read_to_string(path)?;
         Ok(toml::from_str(&text)?)
@@ -52,6 +68,28 @@ impl Config {
     /// Mape koje postoje na disku (skener preskace ostale).
     pub fn existing_roots(&self) -> Vec<Root> {
         self.library.roots.iter().filter(|r| r.path.is_dir()).cloned().collect()
+    }
+}
+
+/// Mreza: koja se adresa koristi za dohvat s interneta.
+///
+/// Zasto postoji: kucne mreze cesto imaju IPv6 koji "izgleda" dostupan (DNS
+/// vrati AAAA), ali ne vodi nikamo — zahtjev tada visi dok ne istekne vrijeme.
+/// Zato je zadano `ipv4`; `any` vrati staro ponasanje.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NetworkSection {
+    /// `ipv4` (zadano), `ipv6` ili `any`.
+    #[serde(default = "default_ip_family")]
+    pub ip_family: String,
+}
+
+fn default_ip_family() -> String {
+    "ipv4".to_string()
+}
+
+impl Default for NetworkSection {
+    fn default() -> Self {
+        Self { ip_family: default_ip_family() }
     }
 }
 

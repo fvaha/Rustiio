@@ -41,7 +41,7 @@ fn report(label: &str, query: &Query, source: Option<&str>, bytes: usize) {
 #[ignore = "trazi mrezu"]
 fn tmdb_web_is_enough_for_a_movie() {
     let art = temp_art("tmdb-web");
-    let enricher = Enricher::new(None, art.clone());
+    let enricher = Enricher::new(None, art.clone(), "ipv4");
     assert!(!enricher.has_api_key(), "ovo je test bez kljuca");
 
     let query = guess_title("Sicario.2015.1080p.BluRay.x264-[YTS.AM].mkv");
@@ -58,7 +58,7 @@ fn tmdb_web_is_enough_for_a_movie() {
 #[ignore = "trazi mrezu"]
 fn cached_poster_is_reused_without_download() {
     let art = temp_art("cache");
-    let enricher = Enricher::new(None, art.clone());
+    let enricher = Enricher::new(None, art.clone(), "ipv4");
     let query = Query { title: "The Matrix".to_string(), year: Some(1999), is_series: false };
     let first = enricher.poster_for_query(2, &query).expect("prvi dohvat");
     let second = enricher.poster_for_query(2, &query).expect("drugi dohvat");
@@ -110,7 +110,7 @@ fn local_poster_beats_the_network() {
     poster.resize(4096, 0x7F);
     std::fs::write(media.join("poster.jpg"), &poster).expect("poster uz film");
 
-    let enricher = Enricher::new(None, art.clone());
+    let enricher = Enricher::new(None, art.clone(), "ipv4");
     let found = enricher.poster_for(3, &video).expect("lokalni poster");
     assert_eq!(found.source.map(|source| source.as_str()), Some("local"));
     assert_eq!(found.bytes, poster.len());
@@ -126,7 +126,7 @@ fn local_poster_beats_the_network() {
 fn api_key_uses_the_official_tmdb_api() {
     let key = std::env::var("TMDB_API_KEY").expect("TMDB_API_KEY u okolini");
     let art = temp_art("tmdb-api");
-    let enricher = Enricher::new(Some(key), art);
+    let enricher = Enricher::new(Some(key), art, "ipv4");
     assert!(enricher.has_api_key());
 
     let query = guess_title("Sicario.2015.1080p.BluRay.x264-[YTS.AM].mkv");

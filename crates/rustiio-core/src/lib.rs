@@ -4,6 +4,7 @@ pub mod config;
 pub mod device;
 pub mod net;
 pub mod time;
+pub mod tools;
 
 pub use config::Config;
 pub use device::DeviceIdentity;

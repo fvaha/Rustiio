@@ -200,6 +200,9 @@ Zamke nađene živim testiranjem:
 
 - [ ] Tauri v2 šel: embedded core (bez zasebnog procesa) ili "connect na remote Rustiio", tray ikona, autostart, "otvori UI"
 - [ ] Installeri: `.deb`/`.rpm`/`.AppImage`, `.msi`/NSIS, `.dmg`; `brew` formula; Docker `linuxserver`-style slika
+- [ ] **ffmpeg u paketu** (odluka korisnika): statiční build po platformi + licenca uz njega; `<dir>/ffmpeg` pokraj binarnog fajla
+- [ ] **Sve platforme rade isto** — ista značajke svuda (bez "na Linuxu radi, na Windowsu ne")
+- [ ] **Box .10 bez Dockera**: native binarni fajl + systemd unit, ffmpeg u paketu (zamjena za Docker deploy)
 - [ ] systemd unit (User=vaha, Restart=on-failure) + Windows service + macOS launchd
 - [ ] auto-update (opcionalno, opt-in)
 - [ ] cross-compile u CI (x86_64/arm64 za Linux, Windows, macOS)
@@ -254,7 +257,7 @@ Zamke nađene živim testiranjem:
 
 ## 6. Otvorena pitanja
 
-1. Zadržati `ffmpeg` kao vanjsku ovisnost ili ga embeddati (GPL/veličina)? — **odluka: vanjski ffmpeg**, s auto-downloadom u Fazi 5.
+- [x] **Riješeno (2026-09-24, korisnik): ffmpeg IDE U PAKET.** Svaka platforma dobiva priloženi `ffmpeg`/`ffprobe` (statični build s NVENC/VAAPI/QSV/AMF/VideoToolbox), u `<dir>/ffmpeg` uz binarni fajl → radi odmah po instalaciji, bez ičega dodatnog. `rustiio-core/src/tools.rs` prvo traži priloženi alat, pa `PATH`; eksplicitna putanja u configu uvijek pobjeđuje. (Velicina paketa raste ~70-100 MB — prihvaćeno.)
 2. Titlovi: burn-in ili soft? — **po profilu**, default soft (resource).
 3. Treba li Rustiio preuzeti i download/pretragu (filmovi/serije) ili ostaje zaseban app? — **ne u Fazi 1–4**, eventualno plugin u Fazi 6.
 4. Slika u DLNA (foto galerija) — da, ali tek nakon videa (Faza 3 sekundarno).

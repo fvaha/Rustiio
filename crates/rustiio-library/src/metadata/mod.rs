@@ -83,8 +83,17 @@ pub struct Enricher {
 
 impl Enricher {
     /// `art_dir` je mapa s kešom (`<config_dir>/art`).
-    pub fn new(api_key: Option<String>, art_dir: PathBuf) -> Self {
+    ///
+    /// `ip_family` je tekst iz configa (`ipv4` / `ipv6` / `any`). Na mrezama s
+    /// polomljenim IPv6-om `ipv4` je razlika izmedju "radi" i "visi 20 s po
+    /// zahtjevu", pa se vrijednost logira pri stvaranju.
+    pub fn new(api_key: Option<String>, art_dir: PathBuf, ip_family: &str) -> Self {
+        let family = parse_ip_family(ip_family);
+        tracing::info!(ip_family = ?family, "mreza za dohvat postera");
         let config = ureq::Agent::config_builder()
+            .ip_family(family)
+            // Kratak connect timeout: mrtva adresa ne smije pojesti cijeli zahtjev.
+            .timeout_connect(Some(std::time::Duration::from_secs(4)))
             .timeout_global(Some(std::time::Duration::from_secs(20)))
             .user_agent(keyless::USER_AGENT)
             .build();
@@ -93,8 +102,8 @@ impl Enricher {
     }
 
     /// Ključ iz okoline (`TMDB_API_KEY`); prazno znači "radi bez ključa".
-    pub fn from_env(art_dir: PathBuf) -> Self {
-        Self::new(std::env::var("TMDB_API_KEY").ok(), art_dir)
+    pub fn from_env(art_dir: PathBuf, ip_family: &str) -> Self {
+        Self::new(std::env::var("TMDB_API_KEY").ok(), art_dir, ip_family)
     }
 
     pub fn has_api_key(&self) -> bool {
@@ -262,6 +271,15 @@ fn is_noise(word: &str) -> bool {
         || word.starts_with("www")
         || word.ends_with("mx")
         || word.ends_with("am")
+}
+
+/// Tekst iz configa u obitelj adresa (`ipv4` je zadano).
+pub fn parse_ip_family(value: &str) -> ureq::config::IpFamily {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "ipv4" | "4" | "v4" => ureq::config::IpFamily::Ipv4Only,
+        "ipv6" | "6" | "v6" => ureq::config::IpFamily::Ipv6Only,
+        _ => ureq::config::IpFamily::Any,
+    }
 }
 
 #[cfg(test)]

@@ -12,6 +12,8 @@ services:
     environment:
       RUSTIIO_CONFIG_DIR: /config
       RUST_LOG: info
+      # TMDB kljuc za postere. Vrijednost drzi u .env (nije u gitu); prazno = keyless izvori.
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
     volumes:
       - ./deploy/config:/config
       # Medijske mape s hosta — prilagodi svojima (read-only je dovoljno).
