@@ -246,6 +246,44 @@ pub fn sync(store: &Store, root_id: i64, items: &[ScanItem], now: i64) -> rusqli
     Ok(report)
 }
 
+/// Obriši sve što pripada mapama koje više nisu u konfiguraciji.
+///
+/// `items::sync` briše samo unutar mapa koje se **još skeniraju**, pa redovi
+/// izbačene mape (npr. ugašena Muzika, ili stara putanja `/media/…` prije
+/// migracije) ostaju zauvijek: pretraga i „Nedavno dodano" vraćaju duhove,
+/// a baza raste. Ovo je pometač tih ostataka.
+///
+/// Prazan `keep` se **preskače** — config bez ijedne mape ne smije obrisati
+/// cijelu biblioteku.
+pub fn prune_roots(store: &Store, keep: &[i64]) -> rusqlite::Result<usize> {
+    if keep.is_empty() {
+        return Ok(0);
+    }
+    let mut conn = store.conn();
+    let transaction = conn.transaction()?;
+    transaction.execute_batch("CREATE TEMP TABLE _keep (id INTEGER PRIMARY KEY);")?;
+    {
+        let mut insert = transaction.prepare("INSERT OR IGNORE INTO _keep (id) VALUES (?1)")?;
+        for id in keep {
+            insert.execute(params![id])?;
+        }
+    }
+    let removed: i64 = transaction.query_row(
+        "SELECT COUNT(*) FROM items WHERE root_id NOT IN (SELECT id FROM _keep)",
+        [],
+        |row| row.get(0),
+    )?;
+    transaction.execute("DELETE FROM items WHERE root_id NOT IN (SELECT id FROM _keep)", [])?;
+    // Povijest gledanja bez objekta nema smisla (id-evi se više neće javiti).
+    // `play_state.item_id` inače kaskadno pada uz `items`, ali ovo pokriva i
+    // slučaj kad su kaskade isključene.
+    transaction.execute("DELETE FROM play_state WHERE item_id NOT IN (SELECT id FROM items)", [])?;
+    transaction.execute("DELETE FROM roots WHERE id NOT IN (SELECT id FROM _keep)", [])?;
+    transaction.execute_batch("DROP TABLE _keep;")?;
+    transaction.commit()?;
+    Ok(removed.max(0) as usize)
+}
+
 /// Svi objekti zadane vrste (za virtualne poglede i REST).
 pub fn by_kind(store: &Store, kind: &str, limit: usize) -> rusqlite::Result<Vec<ItemRow>> {
     let conn = store.conn();

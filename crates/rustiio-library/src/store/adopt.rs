@@ -29,6 +29,7 @@ pub struct SyncSummary {
 pub fn adopt_catalog(store: &Store, catalog: &mut Catalog) -> SyncSummary {
     let mut summary = SyncSummary::default();
     let now = Store::now();
+    let mut synced_roots: Vec<i64> = Vec::new();
 
     for root in catalog.top_level() {
         if root.path.as_os_str().is_empty() || root.kind != NodeKind::Container {
@@ -53,9 +54,21 @@ pub fn adopt_catalog(store: &Store, catalog: &mut Catalog) -> SyncSummary {
                 summary.added += report.added;
                 summary.updated += report.updated;
                 summary.removed += report.removed;
+                synced_roots.push(root_id);
             }
             Err(error) => warn!(root = %path, error = %error, "sken nije upisan u bazu"),
         }
+    }
+
+    // Mape kojih više nema u configu (ugašena Muzika, stare putanje) — inače
+    // njihovi redovi ostaju u bazi i pretraga vraća duhove.
+    match items::prune_roots(store, &synced_roots) {
+        Ok(removed) if removed > 0 => {
+            info!(removed, "ostaci mapa kojih nema u configu obrisani");
+            summary.removed += removed;
+        }
+        Ok(_) => {}
+        Err(error) => warn!(error = %error, "ostaci starih mapa nisu obrisani"),
     }
 
     match store.ids_by_path() {
@@ -163,6 +176,45 @@ mod tests {
         let summary = adopt_catalog(&store, &mut fresh);
         assert_eq!(summary.removed, 1);
         assert_eq!(store.item_count().unwrap(), before - 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dropped_root_is_pruned_from_the_database() {
+        // Scenarij s boxa: mapa izbačena iz configa (Muzika / stara putanja) mora
+        // nestati iz baze, inače pretraga i "Nedavno dodano" vraćaju duhove.
+        let dir = temp_dir("prune");
+        let store = Store::open_memory().expect("baza");
+
+        let films = dir.join("a");
+        let music = dir.join("b");
+        for (label, path) in [("Filmovi", &films), ("Muzika", &music)] {
+            std::fs::create_dir_all(path).expect("mapa");
+            std::fs::write(path.join(format!("{label}.mkv")), b"x").expect("datoteka");
+        }
+
+        let roots = |path: std::path::PathBuf| {
+            vec![Root { label: "Filmovi".to_string(), path, kind: RootKind::Video }]
+        };
+        // Prvo sken s OBJE mape (kao pravi config), pa sken sa samo jednom.
+        let mut both = scan(&ScanOptions::new(
+            vec![
+                Root { label: "Filmovi".to_string(), path: films.clone(), kind: RootKind::Video },
+                Root { label: "Muzika".to_string(), path: music.clone(), kind: RootKind::Video },
+            ],
+            vec!["mkv".to_string()],
+        ));
+        adopt_catalog(&store, &mut both);
+        let with_both = store.item_count().unwrap();
+        assert!(with_both >= 4, "dvije mape + dva filma, a ima {with_both}");
+
+        let mut only_films = scan(&ScanOptions::new(roots(films), vec!["mkv".to_string()]));
+        let summary = adopt_catalog(&store, &mut only_films);
+        assert!(summary.removed >= 2, "stara mapa i njezin film moraju otići: {summary:?}");
+        assert!(store.item_count().unwrap() < with_both, "baza mora biti manja nakon izbacivanja mape");
+        let paths: Vec<String> = store.ids_by_path().unwrap().into_iter().map(|(path, _)| path).collect();
+        assert!(!paths.iter().any(|path| path.contains("Muzika")), "duh Muzike: {paths:?}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
