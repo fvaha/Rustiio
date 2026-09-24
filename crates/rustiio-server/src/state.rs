@@ -276,46 +276,32 @@ impl AppState {
     }
 }
 
-/// Jedan prolaz obogacivanja: poster za objekte koji ga jos nemaju.
+/// Pozadinski prolaz obogacivanja (poster za videe koji ga nemaju).
 ///
-/// Blokira (mreza + disk), pa ga zove pozadinski zadatak; vraca koliko je
-/// objekata obradjeno.
-///
-/// `mark_missing` je namjerno odvojeno: u pozadinskom prolazu (pokretanje
-/// servera) **ne** pisemo "nema ga" — bez mreze bi cijela biblioteka bila
-/// oznacena kao gotova zauvijek. Rucni `/api/posters/refresh` smije.
-pub fn enrich_posters(state: &AppState, limit: usize, mark_missing: bool) -> usize {
-    let pending = match rustiio_library::store::items::items_needing_poster(&state.store, limit) {
-        Ok(pending) => pending,
+/// Logika je u biblioteci (`metadata::enrich`) — dijeli je CLI `rustiio posters`.
+/// Vraca broj obradenih objekata.
+pub fn enrich_posters(state: &AppState, batch: usize, mark_missing: bool, max_batches: usize) -> usize {
+    match rustiio_library::metadata::run_until_done(
+        &state.store,
+        &state.enricher,
+        batch,
+        mark_missing,
+        max_batches,
+    ) {
+        Ok(summary) => {
+            if summary.processed > 0 {
+                info!(
+                    processed = summary.processed,
+                    found = summary.found,
+                    missing = summary.missing,
+                    "prolaz postera gotov"
+                );
+            }
+            summary.processed
+        }
         Err(error) => {
-            warn!(%error, "ne mogu citati objekte bez postera");
-            return 0;
-        }
-    };
-    let pending_len = pending.len();
-    let mut found = 0;
-    for (id, path) in pending {
-        let poster = state.enricher.poster_for(id, &path);
-        let (file, source) = match &poster {
-            Some(poster) => (
-                poster.path.file_name().map(|name| name.to_string_lossy().to_string()),
-                poster.source.map(|source| source.as_str().to_string()),
-            ),
-            None if mark_missing => (None, Some("none".to_string())),
-            None => continue,
-        };
-        if let Err(error) =
-            rustiio_library::store::items::update_poster(&state.store, id, file.as_deref(), source.as_deref())
-        {
-            warn!(id, %error, "ne mogu upisati poster");
-            continue;
-        }
-        if poster.is_some() {
-            found += 1;
+            warn!(%error, "prolaz postera nije uspio");
+            0
         }
     }
-    if found > 0 {
-        info!(found, processed = pending_len, "posteri dohvaceni");
-    }
-    pending_len
 }

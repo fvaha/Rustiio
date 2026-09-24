@@ -11,6 +11,8 @@ Group=vaha
 StateDirectory=rustiio
 Environment=RUSTIIO_CONFIG_DIR=/var/lib/rustiio
 Environment=RUST_LOG=info
+# Kljucevi (npr. TMDB_API_KEY) — drzi izvan repoa, mode 600.
+EnvironmentFile=-/etc/rustiio/env
 ExecStart=/usr/local/bin/rustiio run
 # Health-check na razini systemd-a: ako /healthz ne vrati 200, restartaj.
 ExecStartPost=/bin/sh -c 'sleep 2; /usr/local/bin/rustiio health --quiet'

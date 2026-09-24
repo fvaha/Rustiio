@@ -95,6 +95,22 @@ pub async fn execute(config_path: PathBuf, args: RunArgs) -> anyhow::Result<()> 
         info!(from_db, "metapodaci iz baze");
     }
 
+    // Posteri: jedan prolaz u pozadini, bez blokiranja servera. Bez mreze se
+    // nista ne oznacava kao "nema ga" — sljedeće pokretanje pokusa ponovno.
+    if config.library.posters {
+        let worker = state.clone();
+        tokio::spawn(async move {
+            let processed = tokio::task::spawn_blocking(move || {
+                rustiio_server::state::enrich_posters(&worker, 25, false, 200)
+            })
+            .await
+            .unwrap_or(0);
+            if processed == 0 {
+                info!("nema videa bez postera");
+            }
+        });
+    }
+
     // Praćenje mapa: novo/obrisano pokreće resken bez periodičnog prelaženja diska.
     // `_watcher_guard` drži watcher živim do kraja procesa (drop zaustavlja praćenje).
     let _watcher_guard: Option<rustiio_library::LibraryWatcher> = if config.library.watch {

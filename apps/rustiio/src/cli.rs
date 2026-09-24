@@ -37,6 +37,8 @@ pub enum Command {
     Health(HealthArgs),
     /// Napisi default config i izadji.
     Init,
+    /// Dohvati postere za videe koji ih nemaju (radi i dok server radi).
+    Posters(PostersArgs),
 }
 
 impl Default for Command {
@@ -76,4 +78,20 @@ pub struct HealthArgs {
     /// Ne ispisuj nista kad je sve u redu (za skripte).
     #[arg(short, long)]
     pub quiet: bool,
+}
+
+#[derive(Debug, Default, Args)]
+pub struct PostersArgs {
+    /// Koliko objekata u jednoj turi.
+    #[arg(short, long, default_value_t = 25)]
+    pub batch: usize,
+    /// Najvise tura (svaka tura = `batch` objekata).
+    #[arg(short, long, default_value_t = 200)]
+    pub max_batches: usize,
+    /// Zapisi i "probano, nema ga" (bez ovoga se isti objekti probaju svaki put).
+    #[arg(long)]
+    pub mark_missing: bool,
+    /// Zaboravi prijasnje "nema ga" pa probaj ponovno sve.
+    #[arg(long)]
+    pub reset: bool,
 }

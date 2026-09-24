@@ -59,9 +59,18 @@ pub fn resolve(configured: &str) -> String {
 mod tests {
     use super::*;
 
+    /// Svaki test dobiva svoju mapu (`name` + pid) — inače ostaci iz prijašnjeg
+    /// pokretanja (ili susjedni test) lažno "nađu" priloženi alat.
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("rustiio-tools-{name}"));
+        let dir = std::env::temp_dir().join(format!("rustiio-tools-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mapa");
+        dir
+    }
+
+    /// Mapa koja glumi `<prefix>/bin` (uz nju se traži i `../lib/rustiio`).
+    fn bin_dir(name: &str) -> PathBuf {
+        let dir = temp_dir(name).join("app/bin");
         std::fs::create_dir_all(&dir).expect("mapa");
         dir
     }
@@ -77,14 +86,14 @@ mod tests {
 
     #[test]
     fn explicit_path_always_wins() {
-        let dir = temp_dir("explicit");
+        let dir = bin_dir("explicit");
         std::fs::write(dir.join("ffmpeg"), b"x").expect("datoteka");
         assert_eq!(resolve_in(Some(&dir), "/opt/ffmpeg"), "/opt/ffmpeg");
     }
 
     #[test]
     fn bundled_tool_next_to_the_binary_wins_over_path() {
-        let dir = temp_dir("bundled");
+        let dir = bin_dir("bundled");
         std::fs::write(dir.join("ffmpeg"), b"x").expect("datoteka");
         assert_eq!(resolve_in(Some(&dir), "ffmpeg"), dir.join("ffmpeg").to_string_lossy());
 
@@ -94,10 +103,10 @@ mod tests {
 
     #[test]
     fn bundled_tool_is_found_in_lib_subdir() {
-        let dir = temp_dir("lib");
+        let dir = bin_dir("lib");
         let lib = dir.join("../lib/rustiio");
         std::fs::create_dir_all(&lib).expect("mapa");
         std::fs::write(lib.join("ffprobe"), b"x").expect("datoteka");
-        assert_eq!(resolve_in(Some(&dir), "ffprobe"), dir.join("../lib/rustiio/ffprobe").to_string_lossy());
+        assert_eq!(resolve_in(Some(&dir), "ffprobe"), lib.join("ffprobe").to_string_lossy());
     }
 }

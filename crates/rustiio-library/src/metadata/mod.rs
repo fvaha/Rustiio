@@ -12,6 +12,7 @@
 //! Ništa se ne dohvaća samo zato što može: bez pronađenog postera nema upisa.
 
 pub mod cache;
+pub mod enrich;
 pub mod keyless;
 pub mod local;
 pub mod pacing;
@@ -74,6 +75,8 @@ pub struct Poster {
 }
 
 /// Red izvora: lokalno → TMDB (ključ ili web) → Wikipedia → TVmaze → Cover Art Archive.
+pub use enrich::{PassSummary, run_pass, run_until_done};
+
 pub struct Enricher {
     agent: ureq::Agent,
     api_key: Option<String>,
@@ -141,7 +144,21 @@ impl Enricher {
         let found = tmdb::poster(&self.agent, query, self.api_key.as_deref(), &self.width)
             .or_else(|| keyless::wikipedia_poster(&self.agent, query))
             .or_else(|| keyless::tvmaze_poster(&self.agent, query))
-            .or_else(|| keyless::coverart_poster(&self.agent, query))?;
+            .or_else(|| keyless::coverart_poster(&self.agent, query))
+            .inspect(|found| {
+                tracing::debug!(title = %query.title, source = found.source.as_str(), "izvor postera")
+            })
+            .or_else(|| {
+                // Nijedan izvor nije nasao nista — u `debug` logu se vidi tocno koji je upit bio.
+                tracing::debug!(
+                    title = %query.title,
+                    year = ?query.year,
+                    series = query.is_series,
+                    tmdb_key = self.api_key.is_some(),
+                    "nijedan izvor nije nasao poster"
+                );
+                None
+            })?;
 
         if !cache::is_image(&found.bytes) {
             tracing::warn!(title = %query.title, url = %found.url, "dohvaceno nije slika");

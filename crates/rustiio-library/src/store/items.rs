@@ -378,13 +378,20 @@ pub fn poster_of(store: &Store, item_id: i64) -> rusqlite::Result<Option<(String
 }
 
 /// Video bez postera — za pozadinsko obogaćivanje (najstariji prvi, da je red stalan).
-pub fn items_needing_poster(store: &Store, limit: usize) -> rusqlite::Result<Vec<(i64, PathBuf)>> {
+pub fn items_needing_poster(
+    store: &Store,
+    limit: usize,
+    after_id: i64,
+) -> rusqlite::Result<Vec<(i64, PathBuf)>> {
     let conn = store.conn();
+    // Kursor po `id` (ne po `added_at`): objekt koji ne uspije ostaje bez postera i
+    // bez kursora bi se vracao u svakoj sljedećoj turi — prolaz nikad ne bi zavrsio.
     let mut statement = conn.prepare(
-        "SELECT id, path FROM items WHERE kind = 'video' AND poster IS NULL
-         ORDER BY added_at DESC, id ASC LIMIT ?1",
+        "SELECT id, path FROM items
+         WHERE kind = 'video' AND poster IS NULL AND poster_source IS NULL AND id > ?2
+         ORDER BY id ASC LIMIT ?1",
     )?;
-    let rows = statement.query_map(params![limit as i64], |row| {
+    let rows = statement.query_map(params![limit as i64, after_id], |row| {
         Ok((row.get::<_, i64>(0)?, PathBuf::from(row.get::<_, String>(1)?)))
     })?;
     rows.collect()

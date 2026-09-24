@@ -1350,11 +1350,7 @@ async fn api_posters_refresh(State(state): State<AppState>) -> Response {
         Ok(Ok(reset)) => {
             let worker = state.clone();
             tokio::task::spawn_blocking(move || {
-                for _ in 0..20 {
-                    if crate::state::enrich_posters(&worker, 25, true) == 0 {
-                        break;
-                    }
-                }
+                crate::state::enrich_posters(&worker, 25, true, 200);
             });
             axum::Json(json!({ "reset": reset, "started": true })).into_response()
         }

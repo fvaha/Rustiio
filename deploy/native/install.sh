@@ -80,7 +80,17 @@ else
     log "config napisan: $config"
 fi
 
-# --- 4. systemd --------------------------------------------------------------
+# --- 4. kljucevi (opcionalno) ------------------------------------------------
+# TMDB_API_KEY=... u okolini instalacije -> /etc/rustiio/env (mode 600), a unit ga
+# cita preko `EnvironmentFile=-/etc/rustiio/env`.
+if [[ -n ${TMDB_API_KEY:-} ]]; then
+    install -d -m 755 /etc/rustiio
+    (umask 077; printf 'TMDB_API_KEY=%s\n' "$TMDB_API_KEY" > /etc/rustiio/env)
+    chmod 600 /etc/rustiio/env
+    log "TMDB kljuc zapisan u /etc/rustiio/env (mode 600)"
+fi
+
+# --- 5. systemd --------------------------------------------------------------
 unit=/etc/systemd/system/rustiio.service
 install -Dm644 "$SRC/deploy/rustiio.service" "$unit"
 sed -i -e "s#^ExecStart=.*#ExecStart=$PREFIX/bin/rustiio run#" \

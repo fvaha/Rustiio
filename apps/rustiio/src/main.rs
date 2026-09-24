@@ -20,5 +20,6 @@ async fn main() -> Result<()> {
         Command::Doctor => cmd::doctor::execute(config_path),
         Command::Health(args) => cmd::health::execute(args).await,
         Command::Init => cmd::init::execute(config_path),
+        Command::Posters(args) => cmd::posters::execute(config_path, args).await,
     }
 }
