@@ -4,6 +4,7 @@
 //! u svojim playlistama), a "nastavi gledati" traži da pozicija bude vezana na
 //! stabilan id, ne na redni broj iz posljednjeg skena.
 
+pub mod adopt;
 pub mod items;
 pub mod play_state;
 pub mod schema;
@@ -15,6 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
+pub use adopt::{SyncSummary, adopt_catalog};
 pub use items::{ItemRow, ScanItem, SyncReport};
 pub use play_state::Position;
 pub use search::SearchHit;

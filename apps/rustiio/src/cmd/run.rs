@@ -86,6 +86,47 @@ pub async fn execute(config_path: PathBuf, args: RunArgs) -> anyhow::Result<()> 
         info!(from_db, "metapodaci iz baze");
     }
 
+    // Praćenje mapa: novo/obrisano pokreće resken bez periodičnog prelaženja diska.
+    // `_watcher_guard` drži watcher živim do kraja procesa (drop zaustavlja praćenje).
+    let _watcher_guard: Option<rustiio_library::LibraryWatcher> = if config.library.watch {
+        let candidates: Vec<std::path::PathBuf> =
+            config.library.roots.iter().map(|root| root.path.clone()).collect();
+        let watched = rustiio_library::watchable_roots(&candidates);
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let started =
+            rustiio_library::LibraryWatcher::start(&watched, rustiio_library::DEFAULT_QUIET, move || {
+                let _ = sender.send(());
+            });
+        match started {
+            Ok(watcher) => {
+                let quiet = watcher.quiet();
+                info!(roots = watcher.roots().len(), quiet_s = quiet.as_secs(), "pratim mape");
+                let live = state.clone();
+                tokio::spawn(async move {
+                    // Prvi događaj pokreće sken; daljnji dok se ne stiša samo produžuju čekanje.
+                    while receiver.recv().await.is_some() {
+                        while tokio::time::timeout(quiet, receiver.recv()).await.is_ok() {}
+                        let started = std::time::Instant::now();
+                        let items = live.rescan().await;
+                        info!(
+                            items,
+                            ms = started.elapsed().as_millis() as u64,
+                            "datoteke promijenjene — resken"
+                        );
+                    }
+                });
+                Some(watcher)
+            }
+            Err(error) => {
+                warn!(error = %error, "pracenje mapa nije pokrenuto — resken ostaje rucni");
+                None
+            }
+        }
+    } else {
+        info!("pracenje mapa iskljuceno (library.watch = false)");
+        None
+    };
+
     let app = router(state);
 
     let listener = TcpListener::bind((config.server.bind.as_str(), port))

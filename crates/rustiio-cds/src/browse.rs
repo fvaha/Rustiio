@@ -99,6 +99,8 @@ pub enum CdsError {
     InvalidArgs(String),
     /// UPnP 501 — akcija postoji, ali je ne podrzavamo (jos).
     Unsupported(String),
+    /// UPnP 501 — pretraga nije mogla procitati indeks (baza).
+    Index(String),
 }
 
 impl CdsError {
@@ -107,6 +109,7 @@ impl CdsError {
             CdsError::NoSuchObject => 701,
             CdsError::InvalidArgs(_) => 402,
             CdsError::Unsupported(_) => 501,
+            CdsError::Index(_) => 501,
         }
     }
 
@@ -115,6 +118,7 @@ impl CdsError {
             CdsError::NoSuchObject => "No such object".to_string(),
             CdsError::InvalidArgs(msg) => format!("Invalid args: {msg}"),
             CdsError::Unsupported(msg) => format!("Action not implemented: {msg}"),
+            CdsError::Index(msg) => format!("Search index unavailable: {msg}"),
         }
     }
 }

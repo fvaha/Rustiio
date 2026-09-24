@@ -155,10 +155,30 @@
 - [x] `GET /api/library` (brojevi po vrsti, serije, shema), `GET/PUT/DELETE /api/playstate/{id}`
 - [ ] CDS `Search` akcija preko istog FTS-a (web UI dio Faze 4 ga ionako koristi prvi)
 - [ ] `notify` watcher (inotify/FSEvents) → delta scan u sekundi, noćni full scan
-- [ ] TMDB obogaćivanje (poster, fanart, žanr, opis) + lokalna cache slika/thumbnaileva (`JPEG_TN`)
+- [x] **Posteri i metapodaci, red izvora**: lokalno (`poster.jpg`/`folder.jpg`/`<film>.jpg`) → TMDB → Wikipedia → TVmaze → Cover Art Archive, s kešom na disku (`<config_dir>/art/<id>.<ext>`, atomički upis)
+- [x] **Ključ nije obavezan** — provjereno živim pozivima (vidi tablicu niže); `TMDB_API_KEY` u okolini uključuje službeni API, prazno znači keyless
+- [x] **Pacing prema hostu** (MusicBrainz traži 1 req/s i vraća 503) + ponovni pokušaji na 429/5xx
+- [ ] Poster u DIDL-u (`albumArtURI` + `JPEG_TN`), `/art/{id}` ruta i `poster` stupac u bazi + pozadinsko obogaćivanje
 - [ ] titlovi: auto-dohvat (OpenSubtitles/titlovi.com) i madlad HR prijevodi kao modul
 
-**Acceptance:** 10k fajlova indeksirano < 30 s, delta scan < 2 s, poster se vidi u VLC-u i na TV-u, "nastavi gledati" radi. → *prvi dio (indeks, stabilni id-evi, pretraga, watch-state) radi; poster i delta scan preostaju.*
+**Acceptance:** 10k fajlova indeksirano < 30 s, delta scan < 2 s, poster se vidi u VLC-u i na TV-u, "nastavi gledati" radi. → *indeks, stabilni id-evi, pretraga, watch-state i dohvat postera rade; poster u DIDL-u i delta scan preostaju.*
+
+### Izvori postera — provjereno živim pozivima (2026-09-24)
+
+| izvor | ključ | dokaz (stvarni dohvat) |
+|---|---|---|
+| lokalno uz datoteku | — | `poster.jpg` → 4096 B u kešu, izvor `local` |
+| **TMDB web scrape → media.themoviedb.org** | **ne** | `Sicario` → w500 JPEG, **98 284 B**, izvor `tmdb-web` |
+| Wikipedia `pageimages` (`pilicense=any`!) | ne | `Amelie` → `Amélie` poster, **115 210 B** |
+| TVmaze `api.tvmaze.com` | ne | `Dark Matter` (2024) → 2000×3000, **1 234 622 B** |
+| MusicBrainz + Cover Art Archive | ne | `Nevermind` → 500×500, **102 309 B** |
+| TMDB API (`api.themoviedb.org`) | **da** | bez ključa: `401 {"status_code":7,"status_message":"Invalid API key"}` |
+
+Zamke nađene živim testiranjem:
+
+- **TMDB slike same ne traže ključ** (`media.themoviedb.org/t/p/w500/<hash>.jpg`), ali `hash` dolazi s javne stranice pretrage → parser mora rezati HTML po ASCII granicama (TMDB poslužuje i ćirilicu; prva verzija parsera je panicala na `begin <= end`).
+- **Wikipedia bez `pilicense=any` vraća `None`** — posteri su "non-free" i inače se ne prikazuju.
+- **MusicBrainz dopušta 1 zahtjev/s** i nakon nekoliko brzih poziva vraća **503** (provjereno). Zato `metadata/pacing.rs`: 1,2 s za MusicBrainz/Cover Art, 250 ms za ostale, plus backoff 0,8/2,5/6 s na 429/5xx. Bez toga su živi testovi padali 3 od 4 prolaza; s pacingom **5/5 dvaput zaredom**.
 
 ### Faza 4 — Web UI + API (~2 tjedna)
 

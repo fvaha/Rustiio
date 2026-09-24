@@ -9,8 +9,10 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+notify = "8.2.0"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 rustiio-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }

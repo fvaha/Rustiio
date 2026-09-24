@@ -232,6 +232,15 @@ pub fn by_kind(store: &Store, kind: &str, limit: usize) -> rusqlite::Result<Vec<
     rows.collect()
 }
 
+/// Svi objekti (za `Search` s kriterijem `*`), najnoviji prvi.
+pub fn recent_all(store: &Store, limit: usize) -> rusqlite::Result<Vec<ItemRow>> {
+    let conn = store.conn();
+    let sql = format!("SELECT {} FROM items ORDER BY added_at DESC LIMIT ?1", ItemRow::COLUMNS);
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map(params![limit as i64], ItemRow::from_row)?;
+    rows.collect()
+}
+
 /// Djeca jednog objekta (za Browse iz baze).
 pub fn children(store: &Store, parent_id: Option<i64>) -> rusqlite::Result<Vec<ItemRow>> {
     let conn = store.conn();

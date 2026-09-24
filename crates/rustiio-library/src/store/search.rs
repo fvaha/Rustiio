@@ -18,36 +18,87 @@ pub struct SearchHit {
 /// — inače "film" povuče cijelu mapu `/media/filmovi` kao pogodak.
 /// Svaki token se veže s AND. Navodnici se dupliraju da upit s `"` ili `(` ne sruši parser.
 pub fn to_match_query(query: &str) -> String {
-    let tokens: Vec<String> = query
+    let phrases: Vec<String> = query
         .split_whitespace()
-        .map(|token| token.trim_matches(|c: char| !c.is_alphanumeric() && !"_-".contains(c)))
+        .map(|token| token.trim_matches(|c: char| !c.is_alphanumeric() && !"_-".contains(c)).to_string())
         .filter(|token| !token.is_empty())
-        .map(|token| {
-            let token = token.replace('"', "\"\"");
-            format!("(title:\"{token}\"* OR path:\"{token}\")")
-        })
         .collect();
-    tokens.join(" AND ")
+    to_match_query_phrases(&phrases, false)
 }
 
-/// Pretraži naslov i putanju. Prazan upit vraća prazno (ne cijelu biblioteku).
+/// Isto kao [`to_match_query`], ali za više fraza: `any_of` ih veže s `OR` umjesto `AND`.
+///
+/// Treba DLNA `Search` akciji: `dc:title contains "a" or dc:title contains "b"`.
+pub fn to_match_query_phrases(phrases: &[String], any_of: bool) -> String {
+    let groups: Vec<String> = phrases
+        .iter()
+        .map(|phrase| {
+            let tokens: Vec<String> = phrase
+                .split_whitespace()
+                .map(|token| token.trim_matches(|c: char| !c.is_alphanumeric() && !"_-".contains(c)))
+                .filter(|token| !token.is_empty())
+                .map(|token| {
+                    let token = token.replace('"', "\"\"");
+                    format!("(title:\"{token}\"* OR path:\"{token}\")")
+                })
+                .collect();
+            if tokens.len() > 1 { format!("({})", tokens.join(" AND ")) } else { tokens.join("") }
+        })
+        .filter(|group| !group.is_empty())
+        .collect();
+
+    groups.join(if any_of { " OR " } else { " AND " })
+}
+
+/// Pretraga s više fraza i (ne)obaveznom vrstom sadržaja.
+pub fn search_phrases(
+    store: &Store,
+    phrases: &[String],
+    any_of: bool,
+    kind: Option<&str>,
+    limit: usize,
+) -> rusqlite::Result<Vec<SearchHit>> {
+    let match_query = to_match_query_phrases(phrases, any_of);
+    if match_query.is_empty() {
+        return Ok(Vec::new());
+    }
+    search_match(store, &match_query, kind, limit)
+}
+
+/// Pretraži naslov i putanju jednim upitom. Prazan upit vraća prazno (ne cijelu biblioteku).
 pub fn search(store: &Store, query: &str, limit: usize) -> rusqlite::Result<Vec<SearchHit>> {
     let match_query = to_match_query(query);
     if match_query.is_empty() {
         return Ok(Vec::new());
     }
+    search_match(store, &match_query, None, limit)
+}
 
+/// Pretraga s već sastavljenim FTS izrazom (dijeli je `search` i `search_phrases`).
+fn search_match(
+    store: &Store,
+    match_query: &str,
+    kind: Option<&str>,
+    limit: usize,
+) -> rusqlite::Result<Vec<SearchHit>> {
     let conn = store.conn();
+    let filter = if kind.is_some() { "AND i.kind = ?3" } else { "" };
     let sql = format!(
         "SELECT {}, bm25(items_fts) AS rank FROM items_fts f JOIN items i ON i.id = f.rowid
-         WHERE items_fts MATCH ?1 ORDER BY bm25(items_fts), i.title LIMIT ?2",
+         WHERE items_fts MATCH ?1 {filter} ORDER BY bm25(items_fts), i.title LIMIT ?2",
         ItemRow::COLUMNS.split(", ").map(|column| format!("i.{column}")).collect::<Vec<_>>().join(", ")
     );
     let mut statement = conn.prepare(&sql)?;
-    let rows = statement.query_map(params![match_query, limit as i64], |row| {
+    let mapper = |row: &rusqlite::Row<'_>| {
         Ok(SearchHit { item: ItemRow::from_row(row)?, rank: row.get::<_, f64>(9)? })
-    })?;
-    rows.collect()
+    };
+    if let Some(kind) = kind {
+        let rows = statement.query_map(params![match_query, limit as i64, kind], mapper)?;
+        rows.collect()
+    } else {
+        let rows = statement.query_map(params![match_query, limit as i64], mapper)?;
+        rows.collect()
+    }
 }
 
 /// Pretraga ograničena na vrstu sadržaja ("video", "audio", "image").
@@ -132,6 +183,29 @@ mod tests {
         let store = store_with_library();
         assert_eq!(search_kind(&store, "test", "audio", 10).unwrap().len(), 1);
         assert_eq!(search_kind(&store, "test", "video", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn phrases_can_be_or_ed_together() {
+        let store = store_with_library();
+        // AND: oba pojma moraju postojati.
+        let and =
+            search_phrases(&store, &["test".to_string(), "sicario".to_string()], false, None, 10).unwrap();
+        assert!(and.is_empty());
+
+        // OR: dovoljno je jedno.
+        let or =
+            search_phrases(&store, &["sicario".to_string(), "zestoki".to_string()], true, None, 10).unwrap();
+        assert_eq!(or.len(), 2, "Sicario i Zestoki Decki");
+
+        // Vrsta sadržaja uz fraze.
+        let only_audio = search_phrases(&store, &["test".to_string()], false, Some("audio"), 10).unwrap();
+        assert_eq!(only_audio.len(), 1);
+        assert_eq!(only_audio[0].item.kind, "audio");
+
+        // Fraza s više riječi ostaje spojena AND-om.
+        let phrase = search_phrases(&store, &["test film".to_string()], false, None, 10).unwrap();
+        assert_eq!(phrase.len(), 1);
     }
 
     #[test]

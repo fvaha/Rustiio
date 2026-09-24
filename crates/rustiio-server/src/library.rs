@@ -3,83 +3,22 @@
 //! Zašto: DLNA `ObjectID` koji TV zapamti mora značiti isti film i nakon restarta
 //! i nakon reskena. Zato id ne dodjeljuje skener (redni broj), nego baza (po putanji).
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-
-use rustiio_library::store::items::{self, ScanItem};
-use rustiio_library::{Catalog, NodeKind, Store};
+use rustiio_library::{Catalog, Store};
 use tracing::{info, warn};
 
-/// Što je jedan prolaz promijenio.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct SyncSummary {
-    pub roots: usize,
-    pub added: usize,
-    pub updated: usize,
-    pub removed: usize,
-    /// Koliko je čvorova u katalogu dobilo id iz baze.
-    pub remapped: usize,
-}
+pub use rustiio_library::SyncSummary;
 
 /// Upiši katalog u bazu i prebaci id-eve kataloga na id-eve iz baze.
 ///
-/// Idempotentno: drugi poziv nad istim sadržajem ne mijenja id-eve.
+/// Tanka ljuska nad `rustiio_library::adopt_catalog` — logika prihvata skena je
+/// u biblioteci (čista operacija nad `Catalog` + `Store`), server je samo zove.
 pub fn sync_catalog(store: &Store, catalog: &mut Catalog) -> SyncSummary {
-    let mut summary = SyncSummary::default();
-    let now = Store::now();
-
-    for root in catalog.top_level() {
-        if root.path.as_os_str().is_empty() || root.kind != NodeKind::Container {
-            continue;
-        }
-        let label = root.title.clone();
-        let path = root.path.to_string_lossy().to_string();
-        let kind = "video";
-        let root_id = match items::upsert_root(store, &label, &path, kind) {
-            Ok(root_id) => root_id,
-            Err(error) => {
-                warn!(root = %path, error = %error, "mapa nije upisana u bazu");
-                continue;
-            }
-        };
-
-        let batch: Vec<ScanItem> =
-            catalog.under(&root.path).iter().filter_map(|node| ScanItem::from_node(node, catalog)).collect();
-
-        match items::sync(store, root_id, &batch, now) {
-            Ok(report) => {
-                summary.roots += 1;
-                summary.added += report.added;
-                summary.updated += report.updated;
-                summary.removed += report.removed;
-            }
-            Err(error) => warn!(root = %path, error = %error, "sken nije upisan u bazu"),
-        }
-    }
-
-    match store.ids_by_path() {
-        Ok(rows) => {
-            let ids: HashMap<PathBuf, String> =
-                rows.into_iter().map(|(path, id)| (PathBuf::from(path), id.to_string())).collect();
-            summary.remapped = catalog.remap_ids(&ids);
-        }
-        Err(error) => warn!(error = %error, "id-evi iz baze nisu procitani"),
-    }
-
-    info!(
-        roots = summary.roots,
-        added = summary.added,
-        updated = summary.updated,
-        removed = summary.removed,
-        remapped = summary.remapped,
-        "biblioteka uskladena s bazom"
-    );
-    summary
+    rustiio_library::adopt_catalog(store, catalog)
 }
 
 /// Prefila `MediaProbe` cache iz baze — nakon restarta nema ponovnog ffprobe-a.
 pub fn warm_probe_cache(store: &Store, probe: &rustiio_library::MediaProbe) -> usize {
-    let rows = match items::media_for_probe(store) {
+    let rows = match rustiio_library::store::items::media_for_probe(store) {
         Ok(rows) => rows,
         Err(error) => {
             warn!(error = %error, "metapodaci iz baze nisu procitani");
@@ -116,8 +55,10 @@ pub fn device_key(headers: &axum::http::HeaderMap) -> String {
 mod tests {
     use super::*;
     use rustiio_core::config::{Root, RootKind};
+    use rustiio_library::NodeKind;
     use rustiio_library::ScanOptions;
     use rustiio_library::scan::scan;
+    use std::path::PathBuf;
 
     fn temp_dir(name: &str) -> PathBuf {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -141,51 +82,6 @@ mod tests {
             vec!["mkv".to_string()],
         );
         scan(&options)
-    }
-
-    #[test]
-    fn sync_writes_library_and_remaps_ids_to_database() {
-        let dir = temp_dir("sync");
-        let store = Store::open_memory().expect("baza");
-        let mut catalog = catalog_for(&dir);
-
-        let first = sync_catalog(&store, &mut catalog);
-        assert_eq!(first.roots, 1);
-        // 3 mape (Filmovi, Serije, Serije/S01) + 2 videa.
-        assert_eq!(first.added, 5);
-        assert!(first.remapped >= 5);
-
-        // Film u katalogu sada ima id iz baze.
-        let film = catalog
-            .of_kinds(&[NodeKind::Video])
-            .into_iter()
-            .find(|node| node.title.contains("Test Film"))
-            .expect("film u katalogu");
-        let db_id = store.item_id(&film.path).unwrap().expect("id u bazi");
-        assert_eq!(film.id, db_id.to_string(), "DLNA id mora biti id iz baze");
-
-        // Djeca i dalje pokazuju na prave id-eve.
-        let root = catalog.top_level().first().cloned().expect("root");
-        assert!(!root.children.is_empty());
-        for child in &root.children {
-            assert!(catalog.get(child).is_some(), "child id {child} postoji u katalogu");
-        }
-
-        // Drugi prolaz ne mijenja id-eve.
-        let second = sync_catalog(&store, &mut catalog);
-        assert_eq!(second.added, 0);
-        let film_again = catalog
-            .of_kinds(&[NodeKind::Video])
-            .into_iter()
-            .find(|node| node.title.contains("Test Film"))
-            .expect("film");
-        assert_eq!(film_again.id, db_id.to_string());
-
-        // Serija je prepoznata iz imena datoteke.
-        let series = items::series_list(&store).unwrap();
-        assert_eq!(series, vec![("Zlo".to_string(), 1)]);
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -225,7 +121,7 @@ mod tests {
             audio_streams: Vec::new(),
             embedded_subtitles: 0,
         };
-        items::update_media(&store, id, &info, Store::now()).expect("metapodaci");
+        rustiio_library::store::items::update_media(&store, id, &info, Store::now()).expect("metapodaci");
 
         // Nova sesija (kao nakon restarta) vidi metapodatke bez ffprobe-a.
         let probe = rustiio_library::MediaProbe::new("ffprobe".to_string(), true);

@@ -245,15 +245,59 @@ async fn content_directory_control(
                 Err(err) => soap_fault_response(err.code(), &err.description()),
             }
         }
-        // Prava pretraga dolazi s FTS indeksom u Fazi 3; prazan rezultat je valjan odgovor.
+        // Prava pretraga nad FTS indeksom: TV-i šalju `dc:title contains "..."` kriterij.
         "Search" => {
+            let search_request = rustiio_cds::SearchRequest {
+                container_id: arg(&args, "ContainerID").unwrap_or_else(|| "0".to_string()),
+                criteria: arg(&args, "SearchCriteria").unwrap_or_default(),
+                filter: arg(&args, "Filter").unwrap_or_else(|| "*".to_string()),
+                starting_index: arg(&args, "StartingIndex").and_then(|v| v.parse().ok()).unwrap_or(0),
+                requested_count: arg(&args, "RequestedCount").and_then(|v| v.parse().ok()).unwrap_or(0),
+                sort_criteria: arg(&args, "SortCriteria").unwrap_or_default(),
+            };
+            let profile = profile_for(&state, &headers, Some(peer)).await;
             let catalog = state.catalog.read().await;
-            let inner = format!(
-                "      <Result>{}</Result>\n      <NumberReturned>0</NumberReturned>\n      <TotalMatches>0</TotalMatches>\n      <UpdateID>{}</UpdateID>",
-                escape(&rustiio_upnp::render_didl(&[])),
-                catalog.update_id
+            let engine = PlaybackEngine::new(
+                &profile,
+                state.sessions.hw(),
+                &state.media_probe,
+                state.config.transcode.enabled,
             );
-            xml_response(soap::response(&request.service, &request.action, &inner))
+            let options = BrowseOptions {
+                base_url: &state.base_url,
+                max_results: MAX_RESULTS,
+                views: state.config.library.views,
+                recent_limit: state.config.library.recent_limit,
+                playback: Some(&engine),
+            };
+            let criteria = rustiio_cds::parse_criteria(&search_request.criteria);
+            // FTS upit nad lokalnim indeksom je sub-milisekundni; držimo ga u istoj dretvi
+            // kao i Browse (katalog je pod read-lockom pa ga ne možemo poslati u spawn_blocking).
+            let search_result =
+                rustiio_cds::search_catalog(&state.store, &catalog, &search_request, &options);
+            match search_result {
+                Ok(outcome) => {
+                    info!(
+                        criteria = %search_request.criteria,
+                        total = outcome.total,
+                        returned = outcome.returned,
+                        device = %header_str(&headers, "user-agent").unwrap_or_else(|| "-".to_string()),
+                        "Search"
+                    );
+                    let inner = format!(
+                        "      <Result>{}</Result>\n      <NumberReturned>{}</NumberReturned>\n      <TotalMatches>{}</TotalMatches>\n      <UpdateID>{}</UpdateID>",
+                        escape(&outcome.didl),
+                        outcome.returned,
+                        outcome.total,
+                        outcome.update_id
+                    );
+                    xml_response(soap::response(&request.service, &request.action, &inner))
+                }
+                Err(err) => {
+                    warn!(criteria = %criteria.phrases.join(" "), error = %err.description(), "Search nije uspio");
+                    soap_fault_response(err.code(), &err.description())
+                }
+            }
         }
         "GetSortCapabilities" => xml_response(soap::response(
             &request.service,
@@ -263,7 +307,7 @@ async fn content_directory_control(
         "GetSearchCapabilities" => xml_response(soap::response(
             &request.service,
             &request.action,
-            "      <SearchCaps>dc:title</SearchCaps>",
+            &format!("      <SearchCaps>{}</SearchCaps>", rustiio_cds::SEARCH_CAPABILITIES),
         )),
         "GetSystemUpdateID" => {
             let catalog = state.catalog.read().await;
