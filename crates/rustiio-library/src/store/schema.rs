@@ -7,7 +7,7 @@
 use rusqlite::Connection;
 
 /// Verzija sheme; raste sa svakom izmjenom tablica (`PRAGMA user_version`).
-pub const VERSION: i32 = 2;
+pub const VERSION: i32 = 3;
 
 /// v1 → v2: dva stupca za poster (datoteka u kešu + odakle je došao).
 const MIGRATION_V2: &str = r#"
@@ -103,6 +103,20 @@ CREATE TABLE IF NOT EXISTS devices (
 );
 "#;
 
+/// v3: zapamćeni ID naslova (TMDB id serijala/filma) — poster se vuče po ID-u,
+/// bez ponovnog pogađanja naslova.
+const MIGRATION_V3: &str = r#"
+CREATE TABLE IF NOT EXISTS title_ids (
+    scope        TEXT PRIMARY KEY,
+    kind         TEXT NOT NULL,
+    provider     TEXT NOT NULL,
+    provider_id  TEXT NOT NULL,
+    title        TEXT NOT NULL,
+    year         INTEGER,
+    resolved_at  INTEGER NOT NULL
+);
+"#;
+
 /// Otvori (ili napravi) bazu i primijeni migracije. Idempotentno.
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // WAL: čitanje ne blokira pisanje tijekom skena.
@@ -122,6 +136,10 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // v2: poster koji je server našao/dohvatio (`art/<id>.<ext>` u config mapi).
     if current < 2 {
         conn.execute_batch(MIGRATION_V2)?;
+    }
+
+    if current < 3 {
+        conn.execute_batch(MIGRATION_V3)?;
     }
 
     conn.pragma_update(None, "user_version", VERSION)?;

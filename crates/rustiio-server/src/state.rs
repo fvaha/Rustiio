@@ -336,8 +336,8 @@ impl AppState {
 /// Vraca broj obradenih objekata.
 /// Ponovno dohvati postere serijala: prvo obriše stare (i keširane slike), pa
 /// prođe biblioteku — svaka epizoda dobije sliku svog serijala.
-pub fn refresh_series_posters(state: &AppState, batch: usize, max_batches: usize) -> usize {
-    match rustiio_library::metadata::forget_series_posters(&state.store, &state.enricher) {
+pub fn refresh_posters(state: &AppState, batch: usize, max_batches: usize) -> usize {
+    match rustiio_library::metadata::forget_video_posters(&state.store, &state.enricher) {
         Ok(broj) => info!(broj, "posteri serijala obrisani — dohvacamo iznova po imenu serijala"),
         Err(error) => warn!(%error, "brisanje postera serijala nije uspjelo"),
     }

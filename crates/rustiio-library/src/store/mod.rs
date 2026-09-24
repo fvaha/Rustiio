@@ -9,6 +9,7 @@ pub mod items;
 pub mod play_state;
 pub mod schema;
 pub mod search;
+pub mod titles;
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};

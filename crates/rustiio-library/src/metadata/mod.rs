@@ -75,7 +75,9 @@ pub struct Poster {
 }
 
 /// Red izvora: lokalno → TMDB (ključ ili web) → Wikipedia → TVmaze → Cover Art Archive.
-pub use enrich::{PassSummary, forget_series_posters, run_pass, run_until_done};
+pub use enrich::{PassSummary, forget_video_posters, run_pass, run_until_done};
+
+use crate::store::titles::ResolvedTitle;
 
 pub struct Enricher {
     agent: ureq::Agent,
@@ -130,6 +132,93 @@ impl Enricher {
         }
         let stem = video.file_stem()?.to_str()?;
         self.poster_for_query(item_id, &guess_title(stem))
+    }
+
+    /// Godina iz imena datoteke (`Fall.2.2026.1080p…` → 2026).
+    pub fn year_of_sample(&self, sample: &std::path::Path) -> Option<u32> {
+        let stem = sample.file_stem()?.to_str()?;
+        guess_title(stem).year
+    }
+
+    /// Riješi naslov u kanonski ID (pretraga + provjera naslova i godine).
+    ///
+    /// ID se pamti u bazi, pa se poster nakon toga vuče **po ID-u** — nikad više
+    /// pogrešna slika zbog toga što je pretraga po imenu vratila tuđi naslov.
+    pub fn resolve_title(
+        &self,
+        sample: &std::path::Path,
+        title: &str,
+        is_series: bool,
+    ) -> Option<ResolvedTitle> {
+        if title.trim().is_empty() {
+            return None;
+        }
+        let stem = sample.file_stem()?.to_str()?;
+        let mut query = guess_title(stem);
+        // Serijal: ime iz baze je čisto (`Slow Horses`). Film: ime datoteke je
+        // čišće od naslova u bazi (`The Fix (2026)` bi pokvarilo pretragu).
+        if is_series || query.title.trim().is_empty() {
+            query.title = title.trim().to_string();
+        }
+        query.is_series = is_series;
+        let (kind, hit, _source) = tmdb::find(&self.agent, &query, self.api_key.as_deref())?;
+        if !tmdb::titles_match(&query.title, &hit.title, query.year, hit.year) {
+            tracing::warn!(
+                trazeno = %query.title,
+                nadjeno = %hit.title,
+                trazena_godina = ?query.year,
+                nadjena_godina = ?hit.year,
+                "pogodak se ne poklapa — ID se ne pamti"
+            );
+            return None;
+        }
+        Some(ResolvedTitle {
+            kind,
+            provider: "tmdb".to_string(),
+            provider_id: hit.id,
+            title: hit.title,
+            year: hit.year,
+        })
+    }
+
+    /// Poster **točno po ID-u** zapisa kod izvora.
+    pub fn poster_by_id(&self, item_id: i64, resolved: &ResolvedTitle) -> Option<Poster> {
+        if let Some(path) = cache::existing(&self.art_dir, item_id) {
+            return Some(Poster { bytes: 0, path, source: None });
+        }
+        let found = tmdb::poster_by_id(
+            &self.agent,
+            &resolved.kind,
+            &resolved.provider_id,
+            self.api_key.as_deref(),
+            &self.width,
+        )?;
+        if !cache::is_image(&found.bytes) {
+            tracing::warn!(provider_id = %resolved.provider_id, url = %found.url, "dohvaceno nije slika");
+            return None;
+        }
+        let path = cache::store(&self.art_dir, item_id, found.extension, &found.bytes).ok()?;
+        tracing::info!(
+            id = item_id,
+            provider_id = %resolved.provider_id,
+            naslov = %resolved.title,
+            godina = ?resolved.year,
+            source = found.source.as_str(),
+            "poster po ID-u"
+        );
+        Some(Poster { path, source: Some(found.source), bytes: found.bytes.len() })
+    }
+
+    /// Slika koja stoji uz samu datoteku (bez mreže) — namjerno stavljena, zato prva.
+    pub fn poster_local(&self, item_id: i64, sample: &std::path::Path) -> Option<Poster> {
+        if let Some(path) = cache::existing(&self.art_dir, item_id) {
+            return Some(Poster { bytes: 0, path, source: None });
+        }
+        let (found_at, bytes) = local::find_local(sample)?;
+        let extension = local::extension_of(&bytes);
+        let path = cache::store(&self.art_dir, item_id, extension, &bytes).ok()?;
+        tracing::info!(id = item_id, from = %found_at.display(), "poster uz datoteku");
+        Some(Poster { path, source: Some(Source::Local), bytes: bytes.len() })
     }
 
     /// Poster za **cijelu seriju**: jedna slika za sve epizode i sezone.

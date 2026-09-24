@@ -5,6 +5,7 @@
 
 use crate::Store;
 use crate::store::items;
+use crate::store::titles;
 
 use super::Enricher;
 
@@ -49,7 +50,7 @@ pub fn run_pass(
     // jednom, a njegove epizode dobiju isti poster (i sezone s njima).
     let mut rijeseni: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    for (id, path, series) in pending {
+    for (id, path, series, title) in pending {
         summary.last_id = id;
         let serija = series.map(|ime| ime.trim().to_string()).filter(|ime| !ime.is_empty());
         if let Some(ime) = &serija
@@ -57,9 +58,74 @@ pub fn run_pass(
         {
             continue;
         }
-        let nadjeno = match &serija {
-            Some(ime) => enricher.poster_for_series(id, &path, ime),
-            None => enricher.poster_for(id, &path),
+
+        // Redoslijed: keš → slika uz datoteku → **zapamćeni ID** → riješi ID pa po
+        // ID-u → lanac izvora po naslovu (rezerva kad ID nema ili se ne poklopi).
+        let nadjeno = enricher.poster_local(id, &path).or_else(|| {
+            let kljuc = titles::scope(serija.as_deref(), id);
+            let zapamcen = match titles::get(store, &kljuc) {
+                Ok(zapis) => zapis,
+                Err(error) => {
+                    tracing::warn!(%error, kljuc = %kljuc, "ne mogu procitati zapamceni ID");
+                    None
+                }
+            };
+            let zapis = match zapamcen {
+                // Zapamćeni ID se provjerava: ako naslov/godina ne potvrde zapis
+                // (npr. `Fall 2` se zalijepio na film iz 1970.), briše se i traži
+                // se iznova — bolje bez ID-a nego poster tuđeg naslova.
+                Some(zapis) => {
+                    let naslov_uzorka = serija.clone().unwrap_or_else(|| title.clone());
+                    let godina = enricher.year_of_sample(&path);
+                    if tmdb_zapis_odgovara(&zapis, &naslov_uzorka, godina) {
+                        Some(zapis)
+                    } else {
+                        tracing::warn!(
+                            kljuc = %kljuc,
+                            provider_id = %zapis.provider_id,
+                            zapis = %zapis.title,
+                            zapis_godina = ?zapis.year,
+                            naslov = %naslov_uzorka,
+                            godina = ?godina,
+                            "zapamceni ID se ne poklapa — brisem i trazim iznova"
+                        );
+                        if let Err(error) = titles::forget(store, &kljuc) {
+                            tracing::warn!(%error, kljuc = %kljuc, "ne mogu obrisati zapamceni ID");
+                        }
+                        None
+                    }
+                }
+                None => {
+                    let (naslov, je_serija) = match &serija {
+                        Some(ime) => (ime.clone(), true),
+                        None => (title.clone(), false),
+                    };
+                    match enricher.resolve_title(&path, &naslov, je_serija) {
+                        Some(novi) => {
+                            if let Err(error) = titles::save(store, &kljuc, &novi) {
+                                tracing::warn!(%error, kljuc = %kljuc, "ne mogu zapamtiti ID");
+                            }
+                            tracing::info!(
+                                kljuc = %kljuc,
+                                provider_id = %novi.provider_id,
+                                naslov = %novi.title,
+                                godina = ?novi.year,
+                                "naslov rijesen u ID"
+                            );
+                            Some(novi)
+                        }
+                        None => None,
+                    }
+                }
+            };
+            zapis.and_then(|zapis| enricher.poster_by_id(id, &zapis))
+        });
+        let nadjeno = match nadjeno {
+            Some(poster) => Some(poster),
+            None => match &serija {
+                Some(ime) => enricher.poster_for_series(id, &path, ime),
+                None => enricher.poster_for(id, &path),
+            },
         };
         match nadjeno {
             Some(poster) => {
@@ -99,10 +165,16 @@ pub fn run_pass(
     Ok(summary)
 }
 
-/// Očisti postere svih serijala i njihove keširane slike, da se dohvate iznova
-/// po imenu serijala (popravak starih, pogrešnih postera po epizodama).
-pub fn forget_series_posters(store: &Store, enricher: &Enricher) -> rusqlite::Result<usize> {
-    let ids = items::clear_series_posters(store)?;
+/// Potvrđuje li naslov i godina zapamćeni zapis?
+fn tmdb_zapis_odgovara(zapis: &titles::ResolvedTitle, naslov: &str, godina: Option<u32>) -> bool {
+    crate::metadata::tmdb::titles_match(naslov, &zapis.title, godina, zapis.year)
+}
+
+/// Očisti postere svih videa i njihove keširane slike, da se dohvate iznova —
+/// **po ID-u** (naslov se razriješi jednom, pa poster ide ravno na taj zapis).
+/// Zapamćeni ID-evi ostaju: oni su ti koji jamče da slika pripada tom naslovu.
+pub fn forget_video_posters(store: &Store, enricher: &Enricher) -> rusqlite::Result<usize> {
+    let ids = items::clear_video_posters(store)?;
     for id in &ids {
         enricher.forget(*id);
     }

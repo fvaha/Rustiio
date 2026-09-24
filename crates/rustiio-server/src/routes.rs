@@ -1306,14 +1306,18 @@ async fn api_posters(State(state): State<AppState>) -> Response {
 /// Ponovni prolaz: zaboravi "nema ga" i dohvati sto fali (radi u pozadini).
 async fn api_posters_refresh(State(state): State<AppState>) -> Response {
     let store = state.store.clone();
-    let reset =
-        tokio::task::spawn_blocking(move || rustiio_library::store::items::reset_missing_posters(&store))
-            .await;
+    let enricher = state.enricher.clone();
+    // Prvo se obrišu stari posteri (i keširane slike), pa prolaz dohvaća iznova:
+    // naslov se razriješi u ID i poster ide ravno na taj zapis kod izvora.
+    let reset = tokio::task::spawn_blocking(move || {
+        rustiio_library::metadata::forget_video_posters(&store, &enricher)
+    })
+    .await;
     match reset {
         Ok(Ok(reset)) => {
             let worker = state.clone();
             tokio::task::spawn_blocking(move || {
-                crate::state::refresh_series_posters(&worker, 25, 200);
+                crate::state::refresh_posters(&worker, 25, 200);
             });
             axum::Json(json!({ "reset": reset, "started": true })).into_response()
         }

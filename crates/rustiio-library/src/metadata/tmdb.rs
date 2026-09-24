@@ -389,3 +389,232 @@ mod tests {
         assert!(looks_like_v4_token(&format!("eyJ{}", "a".repeat(120))));
     }
 }
+
+/// Zapis s TMDB-a za **točno jedan** ID (`/tv/{id}` ili `/movie/{id}`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Detail {
+    pub title: String,
+    pub year: Option<u32>,
+    pub poster_hash: Option<String>,
+}
+
+/// URL zapisa po ID-u (v3 ključ u upitu; v4 token ide u zaglavlje).
+pub fn detail_url(kind: &str, id: &str, key: &str) -> String {
+    format!("{API_BASE}/{kind}/{id}?api_key={key}&language=en-US")
+}
+
+/// Ista polja kao pretraga: `name`/`first_air_date` za serije, `title`/`release_date` za filmove.
+pub fn parse_detail(json: &str) -> Option<Detail> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let title =
+        value.get("title").or_else(|| value.get("name")).and_then(|field| field.as_str())?.to_string();
+    let date = value
+        .get("release_date")
+        .or_else(|| value.get("first_air_date"))
+        .and_then(|field| field.as_str())
+        .unwrap_or_default();
+    Some(Detail {
+        title,
+        year: date.get(..4).and_then(|year| year.parse().ok()),
+        poster_hash: value
+            .get("poster_path")
+            .and_then(|path| path.as_str())
+            .map(|path| path.trim_start_matches('/').to_string()),
+    })
+}
+
+/// Isto, ali s javne stranice (`og:title`, `og:image`) kad nema ključa.
+pub fn parse_web_detail(html: &str) -> Option<Detail> {
+    let polje = |ime: &str| -> Option<String> {
+        let uzorak = format!("property=\"og:{ime}\"");
+        let start = html.find(&uzorak)?;
+        let ostatak = &html[start..];
+        let vrijednost = ostatak.find("content=\"")? + "content=\"".len();
+        let kraj = ostatak[vrijednost..].find('"')?;
+        Some(ostatak[vrijednost..vrijednost + kraj].to_string())
+    };
+    let naslov = polje("title")?;
+    // `Slow Horses (TV Series 2022- ) | TMDB` → naslov i godina.
+    let cist = naslov.split(" | ").next().unwrap_or(&naslov);
+    let title = cist.split(" (").next().unwrap_or(cist).trim().to_string();
+    // Unutar zagrada je `TV Series 2024- ` ili `2015-09-17`: uzmi prvi četveroznamenkasti broj.
+    let year = cist
+        .split(" (")
+        .nth(1)
+        .and_then(|rep: &str| {
+            rep.split(|znak: char| !znak.is_ascii_digit() && znak != '-').find(|token| token.len() >= 4)
+        })
+        .and_then(|token| token.get(..4))
+        .and_then(|year| year.parse().ok());
+    // `…/t/p/w300_and_h450_bestv2/<hash>.jpg` → hash.
+    let slika = polje("image")?;
+    let datoteka = slika.rsplit('/').next()?;
+    let hash = datoteka.rsplit_once('.').map(|(hash, _)| hash).unwrap_or(datoteka);
+    Some(Detail { title, year, poster_hash: Some(hash.to_string()) })
+}
+
+/// Dohvati zapis po ID-u (API ako ima ključ, inače javna stranica).
+pub fn detail(agent: &ureq::Agent, kind: &str, id: &str, api_key: Option<&str>) -> Option<Detail> {
+    let (url, body) = match api_key {
+        Some(key) => {
+            let url = detail_url(kind, id, key);
+            let mut response = agent.get(&url).call().ok()?;
+            (url, response.body_mut().read_to_string().ok()?)
+        }
+        None => {
+            let url = format!("{WEB_BASE}/{kind}/{id}");
+            let mut response = agent
+                .get(&url)
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Accept", "text/html,application/xhtml+xml")
+                .call()
+                .ok()?;
+            let html = response.body_mut().read_to_string().ok()?;
+            return parse_web_detail(&html);
+        }
+    };
+    let _ = url;
+    parse_detail(&body)
+}
+
+/// Poster **po ID-u**: nema pretrage ni pogađanja naslova — točno taj zapis.
+pub fn poster_by_id(
+    agent: &ureq::Agent,
+    kind: &str,
+    id: &str,
+    api_key: Option<&str>,
+    width: &str,
+) -> Option<Found> {
+    let zapis = detail(agent, kind, id, api_key)?;
+    let hash = zapis.poster_hash?;
+    let url = image_url(&hash, width);
+    let bytes = fetch_bytes(agent, &url)?;
+    let extension = extension_for(&bytes)?;
+    let source = if api_key.is_some() { Source::Tmdb } else { Source::TmdbWeb };
+    Some(Found { source, url, bytes, extension })
+}
+
+/// Smije li se ID zapamtiti: naslov se mora slagati, a labavo poklapanje traži i godinu.
+pub fn titles_match(wanted: &str, found: &str, wanted_year: Option<u32>, found_year: Option<u32>) -> bool {
+    // Godina ima zadnju riječ: ako se obje znaju i daleko su, to je drugi naslov
+    // (naš `Fall 2` iz 2026. nije isto što i zapis iz 1970.).
+    if let (Some(trazena), Some(nadena)) = (wanted_year, found_year)
+        && trazena.abs_diff(nadena) > 2
+    {
+        return false;
+    }
+
+    let a = normalize_title(&bez_godine(wanted));
+    let b = normalize_title(&bez_godine(found));
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    if a == b {
+        return true;
+    }
+    let year_ok = matches!((wanted_year, found_year), (Some(w), Some(f)) if w.abs_diff(f) <= 1);
+    year_ok && (a.starts_with(&b) || b.starts_with(&a))
+}
+
+/// `The Fix (2026)` i `The Fix 2026` su isti naslov kao `The Fix` — godina se
+/// uspoređuje zasebno, pa ne smije ulaziti u poklapanje imena.
+fn bez_godine(text: &str) -> String {
+    let mut cist = text.trim().to_string();
+    if let Some(otvorena) = cist.rfind('(') {
+        let unutra = cist[otvorena + 1..].trim_end_matches(')').trim();
+        if unutra.len() == 4 && unutra.chars().all(|znak| znak.is_ascii_digit()) {
+            cist = cist[..otvorena].trim_end().to_string();
+        }
+    }
+    let rijeci: Vec<&str> = cist.split_whitespace().collect();
+    if let Some(zadnja) = rijeci.last()
+        && zadnja.len() == 4
+        && zadnja.chars().all(|znak| znak.is_ascii_digit())
+    {
+        cist = rijeci[..rijeci.len() - 1].join(" ");
+    }
+    cist
+}
+
+/// Nađi kandidata bez slike: pretraga + odabir najboljeg pogotka.
+pub fn find(agent: &ureq::Agent, query: &Query, api_key: Option<&str>) -> Option<(String, Hit, Source)> {
+    let kind = if query.is_series { "tv" } else { "movie" };
+    let (hits, source) = match api_key {
+        Some(key) => (fetch_api(agent, kind, &query.title, key).unwrap_or_default(), Source::Tmdb),
+        None => (fetch_web(agent, kind, &query.title).unwrap_or_default(), Source::TmdbWeb),
+    };
+    let hit = best_hit(&hits, query)?;
+    Some((kind.to_string(), hit, source))
+}
+
+#[cfg(test)]
+mod detail_tests {
+    use super::*;
+
+    #[test]
+    fn api_detail_reads_series_fields() {
+        let json =
+            r#"{"id":1234,"name":"Slow Horses","first_air_date":"2022-04-01","poster_path":"/abc.jpg"}"#;
+        let zapis = parse_detail(json).unwrap();
+        assert_eq!(zapis.title, "Slow Horses");
+        assert_eq!(zapis.year, Some(2022));
+        assert_eq!(zapis.poster_hash.as_deref(), Some("abc.jpg"));
+    }
+
+    #[test]
+    fn api_detail_reads_movie_fields() {
+        let json = r#"{"id":273481,"title":"Sicario","release_date":"2015-09-17","poster_path":"/x.jpg"}"#;
+        let zapis = parse_detail(json).unwrap();
+        assert_eq!((zapis.title.as_str(), zapis.year), ("Sicario", Some(2015)));
+    }
+
+    #[test]
+    fn web_detail_reads_og_tags() {
+        let html = r#"<meta property="og:title" content="Dark Matter (TV Series 2024- ) | TMDB">
+            <meta property="og:image" content="https://media.themoviedb.org/t/p/w300_and_h450_bestv2/xyz.jpg">"#;
+        let zapis = parse_web_detail(html).unwrap();
+        assert_eq!(zapis.title, "Dark Matter");
+        assert_eq!(zapis.year, Some(2024));
+        assert_eq!(zapis.poster_hash.as_deref(), Some("xyz"));
+    }
+
+    #[test]
+    fn detail_url_uses_v3_key_in_query() {
+        assert_eq!(
+            detail_url("tv", "1234", "KEY"),
+            "https://api.themoviedb.org/3/tv/1234?api_key=KEY&language=en-US"
+        );
+    }
+
+    #[test]
+    fn exact_title_is_accepted_without_year() {
+        assert!(titles_match("Dark Matter", "Dark Matter", Some(2024), Some(2024)));
+        assert!(titles_match("The Bureau", "The Bureau", Some(2015), None));
+        assert!(titles_match("The Westies", "The Westies", None, None));
+    }
+
+    #[test]
+    fn far_apart_years_are_a_different_title() {
+        // `Fall 2` iz 2026. ne smije se zalijepiti na zapis iz 1970.
+        assert!(!titles_match("Fall 2 (2026)", "Fall 2", Some(2026), Some(1970)));
+        assert!(!titles_match("Slow Horses", "Slow Horses", Some(2022), Some(2011)));
+        assert!(titles_match("Slow Horses", "Slow Horses", Some(2022), Some(2022)));
+    }
+
+    #[test]
+    fn year_in_title_does_not_break_match() {
+        assert!(titles_match("The Fix (2026)", "The Fix", Some(2026), Some(2026)));
+        assert!(titles_match("The Fix 2026", "The Fix", Some(2026), Some(2026)));
+        assert!(!titles_match("Fall 2 (2026)", "Fall", Some(2026), Some(2022)));
+    }
+
+    #[test]
+    fn loose_title_needs_matching_year() {
+        // Naslov iz datoteke često nosi podnaslov, ali godina mora potvrditi pogodak.
+        assert!(titles_match("Sicario", "Sicario: Day of the Soldado", Some(2015), Some(2015)));
+        // Nastavak iz druge godine se odbija — to je drugi film.
+        assert!(!titles_match("Sicario", "Sicario: Day of the Soldado", Some(2015), Some(2018)));
+        // Posve drugačiji naslov se odbija i kad se godina slaže.
+        assert!(!titles_match("Slow Horses", "Dark Matter", Some(2024), Some(2024)));
+    }
+}
