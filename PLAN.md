@@ -161,6 +161,10 @@
 - [x] **Poster u DIDL-u** (`upnp:albumArtURI` + `dlna:profileID="JPEG_TN"`), ruta `/art/{id}` (404 kad nema postera), `poster`/`poster_source` stupca u bazi (schema v2) i pozadinsko obogaćivanje na pokretanju
 - [x] `/api/posters` (imamo / čekaju / probano) + `/api/posters/refresh` (ručni prolaz; zaboravi "nema ga")
 - [ ] titlovi: auto-dohvat (OpenSubtitles/titlovi.com) i madlad HR prijevodi kao modul
+- [ ] **kvaliteta uparivanja postera**: na boxu se vidi da `guess_title` propusta smeće iz release imena
+      (`slow horses to`, `Last Seen L operatore ITA ENG ATVP DD5 H 264-MeM GP`) → pogrešan ili nikakav poster.
+      Treba: jače čišćenje (tracker tagovi, jezici, `AVP/DD5/H 264`), uparivanje epizoda po seriji
+      (`S01E03` → poster serije), i prag sličnosti prije nego se prihvati pogodak
 
 **Acceptance:** 10k fajlova indeksirano < 30 s, delta scan < 2 s, poster se vidi u VLC-u i na TV-u, "nastavi gledati" radi. → *indeks, stabilni id-evi, pretraga, watch-state, dohvat postera i poster u DIDL-u rade (živo provjereno s pravim TMDB ključem); delta scan i provjera na TV-u preostaju.*
 
