@@ -18,6 +18,12 @@
     "category": "Entertainment",
     "shortDescription": "DLNA/UPnP media server",
     "longDescription": "Rustiio je DLNA/UPnP media server s web sučeljem. Desktop aplikacija diže isti server i prikazuje njegovo sučelje u vlastitom prozoru — biblioteka, uređaji, prekodiranje i postavke na jednom mjestu.",
-    "icon": ["icons/icon.png"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   }
 }

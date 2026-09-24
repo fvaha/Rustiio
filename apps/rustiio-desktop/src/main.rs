@@ -5,6 +5,8 @@
 mod paths;
 mod server;
 
+use tauri::Manager;
+
 fn main() {
     // Server prvo: prozor ima što pokazati čim se otvori.
     let config_path = match paths::config_path() {
@@ -32,10 +34,12 @@ fn main() {
                 .build()?;
             Ok(())
         })
-        .on_window_event(|_window, event| {
-            // Zatvaranje prozora gasi i server (SSDP byebye, praćenje mapa).
-            if matches!(event, tauri::WindowEvent::Destroyed) {
+        .on_window_event(|window, event| {
+            // Zatvaranje prozora gasi i server (SSDP byebye, praćenje mapa) i samu
+            // aplikaciju — inače Tauri ostane živ bez prozora, a server drži port.
+            if matches!(event, tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed) {
                 server::stop();
+                window.app_handle().exit(0);
             }
         })
         .run(tauri::generate_context!())

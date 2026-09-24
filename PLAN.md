@@ -365,3 +365,35 @@ Korisnik: **sve platforme rade isto, ffmpeg je u paketu, box .10 se instalira di
   Objekti bez postera **ne** dobivaju `albumArtURI` (TV ne traži URL koji 404-a).
 - Otvoreno za Fazu 5: pravi **statični** ffmpeg po platformi (trenutno je na boxu kopija sistemskog),
   `.deb`/`.dmg`/`.msi` s tim istim rasporedom.
+
+## Faza 5 — desktop i pakiranje (u radu)
+
+Cilj: **jedan isti server**, više ljuski (CLI, web, desktop prozor) i paketi za sve platforme.
+
+- **Dizanje servera na jednom mjestu** — `crates/rustiio-server/src/boot.rs`: `BootOptions`
+  (scan/ssdp/watch/posters/probe/port) → `Booted` (stanje, `base_url`, adresa, ručke) +
+  `serve(prekid)` / `ugasi()`. `rustiio run` je time pao s 265 na ~70 linija; desktop
+  aplikacija zove isti `boot` i ne kopira ništa. Pad SSDP-a je upozorenje, ne prekid dizanja.
+- **Desktop (Tauri v2)** — `apps/rustiio-desktop/`: server u pozadinskom threadu,
+  prozor pokazuje njegovo sučelje; zadani port iz configa, ako je zauzet prvi slobodan;
+  zatvaranje prozora gasi server (SSDP byybye). Stanje: macOS `~/Library/Application Support/Rustiio`,
+  Linux `~/.config/rustiio`, Windows `%APPDATA%\Rustiio` (config + `rustiio.db` + `art/`).
+  Vlastiti Cargo workspace — da `cargo test --workspace` na serveru bez webkit2gtk ostane čist.
+- **Ikone** — `tauri icon` iz `icons/icon.png` (RGBA) → `.icns`, `.ico`, PNG po veličinama.
+- **CI za izdanja** — `.github/workflows/release.yml`: matrica macOS (arm64/x86_64),
+  Linux (ubuntu-22.04, webkit2gtk), Windows; prije bundlea se preuzme **statični**
+  ffmpeg/ffprobe i preda Tauri-ju kao sidecar (`externalBin`), pa paket nosi svoj ffmpeg
+  uz binarni fajl — točno gdje ga `tools.rs` traži. `externalBin` je samo u CI pozivu
+  (`--config`), da lokalni `tauri build` radi i bez preuzetog ffmpeg-a.
+
+**Provjereno (lokalno, macOS):** `cargo build` desktop aplikacije prolazi; pokrenuta app
+diže server (`/healthz` → `items: 90`, korijeni Downloads i Movies) i sam skenira; stanje
+u `~/Library/Application Support/Rustiio/`. Sortiranje kroz `:8221` daje
+Serije → Dark Matter → Sezona 2 → [S02E05 · 1080p, S02E06 · 1080p] i Zlo → Sezona 2 →
+[S02E01, S02E03], Filmovi → [Abeceda (2020), The Movie (2019)].
+
+**Otvoreno u Fazi 5:** bundle s ffmpeg-om probati lokalno (preuzeti statični macOS ffmpeg),
+`.deb`/`.rpm`/AppImage i `.msi` provjeriti kroz CI (Linux/Windows nisu na ovom stroju),
+naredba `rustiio service install|status` (systemd/launchd/Windows servis) i auto-start,
+potpisivanje/notarizacija za macOS te auto-update.
+

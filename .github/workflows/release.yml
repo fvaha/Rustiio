@@ -1,0 +1,91 @@
+name: release
+
+# Paketi za sve tri platforme: .dmg (macOS), .msi/.exe (Windows), .deb/.rpm/.AppImage (Linux).
+# Uz svaki paket ide i statični ffmpeg/ffprobe (Tauri "sidecar"): Rustiio ga traži prvo
+# uz vlastiti binarni fajl, pa "sve radi odmah po instaliranju" i bez sistemskog ffmpeg-a.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            ffmpeg_url: https://evermeet.cx/ffmpeg/getrelease/zip
+            ffprobe_url: https://evermeet.cx/ffprobe/getrelease/zip
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            ffmpeg_url: https://evermeet.cx/ffmpeg/getrelease/zip
+            ffprobe_url: https://evermeet.cx/ffprobe/getrelease/zip
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            ffmpeg_url: https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ffmpeg_url: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+
+      # Linux bundle traži webkit2gtk (Tauri); macOS i Windows imaju webview u sustavu.
+      - name: Ovisnosti (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf libfuse2 xz-utils
+
+      # Tauri traži sidecar imenovan po targetu (`ffmpeg-<target>`), a u paket ga
+      # sprema pod čistim imenom (`ffmpeg`) — točno tamo gdje ga Rustiio traži.
+      - name: Statični ffmpeg i ffprobe u paket
+        shell: bash
+        run: |
+          set -e
+          mkdir -p apps/rustiio-desktop/binaries
+          cd apps/rustiio-desktop/binaries
+
+          preuzmi() {
+            url="$1"; ime="$2"
+            curl -L --fail --retry 3 -o pak "$url"
+            case "$url" in
+              *.zip)   unzip -j -o pak >/dev/null ;;
+              *.tar.xz) tar -xf pak --strip-components=1 --wildcards "*/$ime" ;;
+            esac
+            rm -f pak
+          }
+
+          preuzmi "${{ matrix.ffmpeg_url }}" ffmpeg
+          if [ "${{ matrix.ffprobe_url }}" != "" ]; then
+            preuzmi "${{ matrix.ffprobe_url }}" ffprobe
+          fi
+
+          case "${{ matrix.os }}" in windows-*) suf=".exe" ;; *) suf="" ;; esac
+          mv "ffmpeg$suf" "ffmpeg-${{ matrix.target }}$suf"
+          mv "ffprobe$suf" "ffprobe-${{ matrix.target }}$suf"
+          chmod +x ffmpeg-* ffprobe-* 2>/dev/null || true
+          ls -la
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/rustiio-desktop
+          # Sidecar se dodaje samo ovdje: lokalni `tauri build` tako radi i bez
+          # preuzetog ffmpeg-a, a izdanje uvijek nosi svoj.
+          args: >-
+            --target ${{ matrix.target }}
+            --config {"bundle":{"externalBin":["binaries/ffmpeg","binaries/ffprobe"]}}
+          tagName: ${{ github.ref_name }}
+          releaseName: "Rustiio ${{ github.ref_name }}"
+          releaseDraft: true
+          prerelease: false
