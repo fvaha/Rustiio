@@ -135,15 +135,25 @@ impl AppState {
             config.transcode.probe_duration || config.transcode.enabled,
         ));
         // Detekcija HW ubrzanja je testno enkodiranje — samo ako transcode radi.
-        let hw = if config.transcode.enabled {
+        let mut hw = if config.transcode.enabled {
             detect_hw(&config.transcode.ffmpeg_path, &config.transcode.hw_accel)
         } else {
             HwSupport::software()
         };
+        // Odabir iz configa (enkoder, niti, HW dekodiranje) upisujemo u detekciju —
+        // odluka o transcodeu i ffmpeg zastavice čitaju odatle.
+        hw.apply_tuning(&rustiio_transcode::Tuning {
+            encoder: Some(config.transcode.encoder.clone()),
+            threads: config.transcode.threads,
+            hardware_decode: config.transcode.hardware_decode,
+        });
         if config.transcode.enabled {
             info!(
                 hw = %hw.summary(),
                 encoders = ?hw.available.iter().map(|hw| hw.name()).collect::<Vec<_>>(),
+                izabran = hw.encoder.as_deref().unwrap_or("auto"),
+                niti = hw.threads,
+                hw_dekodiranje = hw.hardware_decode,
                 "transcode pripremljen"
             );
         }
@@ -324,6 +334,16 @@ impl AppState {
 ///
 /// Logika je u biblioteci (`metadata::enrich`) — dijeli je CLI `rustiio posters`.
 /// Vraca broj obradenih objekata.
+/// Ponovno dohvati postere serijala: prvo obriše stare (i keširane slike), pa
+/// prođe biblioteku — svaka epizoda dobije sliku svog serijala.
+pub fn refresh_series_posters(state: &AppState, batch: usize, max_batches: usize) -> usize {
+    match rustiio_library::metadata::forget_series_posters(&state.store, &state.enricher) {
+        Ok(broj) => info!(broj, "posteri serijala obrisani — dohvacamo iznova po imenu serijala"),
+        Err(error) => warn!(%error, "brisanje postera serijala nije uspjelo"),
+    }
+    enrich_posters(state, batch, true, max_batches)
+}
+
 pub fn enrich_posters(state: &AppState, batch: usize, mark_missing: bool, max_batches: usize) -> usize {
     match rustiio_library::metadata::run_until_done(
         &state.store,

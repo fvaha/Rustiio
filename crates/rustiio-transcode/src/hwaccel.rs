@@ -45,6 +45,23 @@ impl HwAccel {
             _ => None,
         }
     }
+
+    /// Iz imena ffmpeg enkodera (`h264_nvenc`, `hevc_vaapi`, `libx264`) u obitelj.
+    pub fn from_encoder(encoder: &str) -> Self {
+        let name = encoder.trim().to_ascii_lowercase();
+        for (suffix, hw) in [
+            ("_nvenc", HwAccel::Nvenc),
+            ("_vaapi", HwAccel::Vaapi),
+            ("_qsv", HwAccel::Qsv),
+            ("_videotoolbox", HwAccel::VideoToolbox),
+            ("_amf", HwAccel::Amf),
+        ] {
+            if name.ends_with(suffix) {
+                return hw;
+            }
+        }
+        HwAccel::None
+    }
 }
 
 /// Sto je na ovom stroju stvarno dostupno.
@@ -56,6 +73,21 @@ pub struct HwSupport {
     pub notes: Vec<String>,
     /// Ima li ffmpeg `subtitles` filter (libass) — bez toga burn-in nije moguc.
     pub subtitles_filter: bool,
+    /// Enkoder koji je korisnik izričito odabrao (`h264_nvenc`, `libx264`, ...).
+    /// Prazno = pusti odluku da izabere prema kodeku i hardveru.
+    pub encoder: Option<String>,
+    /// Niti za softverski enkoder (0 = ne diraj ffmpeg).
+    pub threads: u32,
+    /// Dekodiraj hardverski i kad enkodira procesor.
+    pub hardware_decode: bool,
+}
+
+/// Podešavanja iz `[transcode]` koja utječu na enkodiranje.
+#[derive(Debug, Clone, Default)]
+pub struct Tuning {
+    pub encoder: Option<String>,
+    pub threads: u32,
+    pub hardware_decode: bool,
 }
 
 impl HwSupport {
@@ -65,6 +97,9 @@ impl HwSupport {
             preferred: HwAccel::None,
             notes: vec!["nema HW ubrzanja".to_string()],
             subtitles_filter: false,
+            encoder: None,
+            threads: 0,
+            hardware_decode: true,
         }
     }
 
@@ -88,6 +123,21 @@ impl HwSupport {
     pub fn supports(&self, hw: HwAccel) -> bool {
         hw == HwAccel::None || self.available.contains(&hw)
     }
+
+    /// Upisi odabir iz configa (konkretan enkoder, niti, HW dekodiranje).
+    pub fn apply_tuning(&mut self, tuning: &Tuning) {
+        self.encoder = tuning.encoder.clone().filter(|value| !value.trim().is_empty());
+        self.threads = tuning.threads;
+        self.hardware_decode = tuning.hardware_decode;
+    }
+
+    /// Je li odabrani enkoder softverski (niti tada imaju smisla)?
+    pub fn encoder_is_software(&self) -> bool {
+        match &self.encoder {
+            Some(name) => HwAccel::from_encoder(name) == HwAccel::None,
+            None => self.preferred == HwAccel::None,
+        }
+    }
 }
 
 /// Redoslijed kojim biramo kad je u configu `auto` (NVENC prvi — najcesce na .10).
@@ -109,6 +159,9 @@ pub fn detect(ffmpeg_path: &str, requested: &str) -> HwSupport {
             preferred: HwAccel::None,
             notes: vec![format!("{ffmpeg_path} nije pokrenut — transcode ide u softver")],
             subtitles_filter,
+            encoder: None,
+            threads: 0,
+            hardware_decode: false,
         };
     }
 
@@ -119,6 +172,9 @@ pub fn detect(ffmpeg_path: &str, requested: &str) -> HwSupport {
             preferred: HwAccel::None,
             notes: vec!["HW ubrzanje iskljuceno u configu".to_string()],
             subtitles_filter,
+            encoder: None,
+            threads: 0,
+            hardware_decode: false,
         };
     }
 
@@ -155,7 +211,15 @@ pub fn detect(ffmpeg_path: &str, requested: &str) -> HwSupport {
         notes.push("transcode ide u softver (libx264)".to_string());
     }
 
-    HwSupport { available, preferred, notes, subtitles_filter }
+    HwSupport {
+        available,
+        preferred,
+        notes,
+        subtitles_filter,
+        encoder: None,
+        threads: 0,
+        hardware_decode: true,
+    }
 }
 
 /// Ima li ffmpeg `subtitles` filter (libass)? Bez njega burn-in ne moze raditi.
@@ -175,6 +239,51 @@ fn has_subtitles_filter(ffmpeg_path: &str) -> bool {
 }
 
 /// Ime ffmpeg encodera za zadani kodek i ubrzanje.
+/// Zastavice za hardversko DEKODIRANJE (ispred `-i`).
+///
+/// Namjerno bez `-hwaccel_output_format`: okviri se vraćaju u sistemsku memoriju,
+/// pa radi u svakoj kombinaciji (GPU dekodira + procesor enkodira = "kombinirano").
+pub fn decode_args(hw: HwAccel, encoder: Option<&str>) -> Option<Vec<String>> {
+    let obitelj = match encoder {
+        Some(name) if HwAccel::from_encoder(name) != HwAccel::None => HwAccel::from_encoder(name),
+        _ => hw,
+    };
+    let device = |args: &mut Vec<String>| {
+        // VAAPI treba i izlazni uređaj prije ulaza.
+        if let Some(cvor) = vaapi_device() {
+            if !args.iter().any(|value| value == "-vaapi_device") {
+                args.push("-vaapi_device".to_string());
+                args.push(cvor);
+            }
+        }
+    };
+    let mut args = Vec::new();
+    match obitelj {
+        HwAccel::Nvenc => args.extend(["-hwaccel".to_string(), "cuda".to_string()]),
+        HwAccel::Qsv => args.extend(["-hwaccel".to_string(), "qsv".to_string()]),
+        HwAccel::Vaapi => {
+            device(&mut args);
+            args.extend(["-hwaccel".to_string(), "vaapi".to_string()]);
+        }
+        HwAccel::VideoToolbox => args.extend(["-hwaccel".to_string(), "videotoolbox".to_string()]),
+        HwAccel::Amf => args.extend(["-hwaccel".to_string(), "d3d11va".to_string()]),
+        HwAccel::None => return None,
+    }
+    (!args.is_empty()).then_some(args)
+}
+
+/// Prvi VAAPI uređaj na stroju.
+pub fn vaapi_device() -> Option<String> {
+    let mut cvorovi: Vec<String> = std::fs::read_dir("/dev/dri")
+        .ok()?
+        .flatten()
+        .map(|entry| format!("/dev/dri/{}", entry.file_name().to_string_lossy()))
+        .filter(|path| path.contains("renderD"))
+        .collect();
+    cvorovi.sort();
+    cvorovi.into_iter().next()
+}
+
 pub fn video_encoder(hw: HwAccel, codec: &str) -> Option<&'static str> {
     let codec = codec.to_ascii_lowercase();
     let (h264, hevc) = match (codec.as_str(), hw) {
@@ -334,6 +443,15 @@ mod tests {
         assert_eq!(HwAccel::parse("videotoolbox"), Some(HwAccel::VideoToolbox));
         assert_eq!(HwAccel::parse("none"), Some(HwAccel::None));
         assert_eq!(HwAccel::parse("bogus"), None);
+    }
+
+    #[test]
+    fn encoder_name_maps_back_to_family() {
+        assert_eq!(HwAccel::from_encoder("h264_nvenc"), HwAccel::Nvenc);
+        assert_eq!(HwAccel::from_encoder("hevc_vaapi"), HwAccel::Vaapi);
+        assert_eq!(HwAccel::from_encoder("h264_videotoolbox"), HwAccel::VideoToolbox);
+        assert_eq!(HwAccel::from_encoder("libx264"), HwAccel::None);
+        assert_eq!(HwAccel::from_encoder("libx265"), HwAccel::None);
     }
 
     #[test]

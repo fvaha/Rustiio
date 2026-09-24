@@ -7,6 +7,9 @@ import { hr, en } from '../src/lib/strings.js'
 
 function putanje(obj, prefix = '', out = new Set()) {
   for (const [key, value] of Object.entries(obj)) {
+    // Ključ s točkom u imenu nikad se ne razriješi (`t()` šeta po segmentima),
+    // pa je to tihi bug: tekst se prikaže kao `tr.scan_title`.
+    if (key.includes('.')) problem.push(`ključ s točkom u imenu (t() ga ne nađe): ${prefix ? `${prefix}.` : ''}${key}`)
     const path = prefix ? `${prefix}.${key}` : key
     if (value && typeof value === 'object') putanje(value, path, out)
     else out.add(path)
@@ -14,9 +17,9 @@ function putanje(obj, prefix = '', out = new Set()) {
   return out
 }
 
+const problem = []
 const hrvatski = putanje(hr)
 const engleski = putanje(en)
-const problem = []
 
 for (const key of hrvatski) if (!engleski.has(key)) problem.push(`nema u en: ${key}`)
 for (const key of engleski) if (!hrvatski.has(key)) problem.push(`nema u hr: ${key}`)

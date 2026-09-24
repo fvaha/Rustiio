@@ -65,6 +65,7 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::api::stats::routes())
         .merge(crate::api::logs::routes())
         .merge(crate::api::settings::routes())
+        .merge(crate::api::transcode::routes())
         .merge(crate::assets::routes())
         .with_state(state)
         .layer(TraceLayer::new_for_http())
@@ -225,7 +226,8 @@ async fn content_directory_control(
                 &state.media_probe,
                 state.config.transcode.enabled,
             );
-            let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone());
+            let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone())
+                .with_catalog(state.catalog.clone());
             let options = BrowseOptions {
                 base_url: &state.base_url,
                 max_results: MAX_RESULTS,
@@ -273,7 +275,8 @@ async fn content_directory_control(
                 &state.media_probe,
                 state.config.transcode.enabled,
             );
-            let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone());
+            let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone())
+                .with_catalog(state.catalog.clone());
             let options = BrowseOptions {
                 base_url: &state.base_url,
                 max_results: MAX_RESULTS,
@@ -1143,6 +1146,10 @@ async fn api_status(State(state): State<AppState>) -> Response {
         "transcode": {
             "hw": state.sessions.hw().summary(),
             "encoders": state.sessions.hw().available.iter().map(|hw| hw.name()).collect::<Vec<_>>(),
+            "encoder": state.sessions.hw().encoder.clone(),
+            "threads": state.sessions.hw().threads,
+            "hardware_decode": state.sessions.hw().hardware_decode,
+            "mode": state.config.transcode.mode,
             "max_concurrent": state.sessions.max_concurrent(),
             "active": state.sessions.active().len(),
         },
@@ -1306,7 +1313,7 @@ async fn api_posters_refresh(State(state): State<AppState>) -> Response {
         Ok(Ok(reset)) => {
             let worker = state.clone();
             tokio::task::spawn_blocking(move || {
-                crate::state::enrich_posters(&worker, 25, true, 200);
+                crate::state::refresh_series_posters(&worker, 25, 200);
             });
             axum::Json(json!({ "reset": reset, "started": true })).into_response()
         }

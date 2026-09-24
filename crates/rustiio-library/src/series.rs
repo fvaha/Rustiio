@@ -82,3 +82,24 @@ mod tests {
         assert_eq!(info("Zlo", 1, 3).label(), "Zlo S01E03");
     }
 }
+
+#[cfg(test)]
+mod realni_testovi {
+    use super::*;
+
+    /// Imena kakva stvarno dolaze s boxa (site prefiks + release rep).
+    #[test]
+    fn stvarna_imena_s_boxa() {
+        for (ime, serija, sezona, epizoda) in [
+            ("www.UIndex.org - Slow.Horses.S03E02.1080p.WEB.H264-CAKES", "Slow Horses", 3, 2),
+            ("www.UIndex.org - Dark.Matter.2024.S01E01.1080p.WEB.H264-CAKES", "Dark Matter", 1, 1),
+            ("www.UIndex.org    - Escape.at.Dannemora.S01E01.1080p", "Escape at Dannemora", 1, 1),
+            ("www.UIndex.org    -    Slow.Horses.S06E02.1080p.WEB.H264-CAKES", "Slow Horses", 6, 2),
+            ("www.UIndex.org    -    Dark.Matter.2024.S02E02.1080p.WEB.H264-CAKES", "Dark Matter", 2, 2),
+        ] {
+            let rezultat = parse(ime);
+            let ocekivano = SeriesInfo { series: serija.to_string(), season: sezona, episode: epizoda };
+            assert_eq!(rezultat, Some(ocekivano), "ime: {ime}");
+        }
+    }
+}

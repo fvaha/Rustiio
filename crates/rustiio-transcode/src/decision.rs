@@ -55,6 +55,10 @@ pub struct Decision {
     pub audio_channels: Option<u8>,
     pub burn_subtitles: bool,
     pub hw: HwAccel,
+    /// Niti za softverski enkoder (0 = pusti ffmpeg da odluči).
+    pub threads: u32,
+    /// Dekodiraj hardverski (ubrzava i kad enkodira procesor).
+    pub hardware_decode: bool,
 }
 
 impl Decision {
@@ -166,6 +170,8 @@ fn remux_decision(profile: &Profile, reasons: Vec<String>, hw: &HwSupport, media
         audio_channels: None,
         burn_subtitles: false,
         hw: hw.preferred,
+        threads: 0,
+        hardware_decode: hw.hardware_decode,
     }
 }
 
@@ -199,12 +205,14 @@ fn direct_decision(
         audio_channels: None,
         burn_subtitles,
         hw: hw.preferred,
+        threads: 0,
+        hardware_decode: hw.hardware_decode,
     }
 }
 
 fn transcode_decision(
     profile: &Profile,
-    reasons: Vec<String>,
+    mut reasons: Vec<String>,
     burn_subtitles: bool,
     hw: &HwSupport,
     video: bool,
@@ -217,10 +225,28 @@ fn transcode_decision(
     let info = ProtocolInfo::new(mime).with_op(&profile.dlna.op).with_flags(&profile.dlna.flags);
 
     // Sta se ne re-enkodira, to se kopira (`-c:v copy` / `-c:a copy`).
+    // Korisnikov izričit odabir enkodera ima prednost — ali samo ako je isti kodek
+    // kao ono što profil traži (inače bi TV dobio kodek koji ne podržava).
+    let izričit = hw.encoder.clone().filter(|name| {
+        let hoce_hevc = matches!(target.video_codec.to_ascii_lowercase().as_str(), "hevc" | "h265");
+        kodek_iz_imena(name) == if hoce_hevc { "hevc" } else { "h264" }
+    });
+    if video && hw.encoder.is_some() && izričit.is_none() {
+        reasons.push(format!(
+            "odabrani enkoder {} ne odgovara kodeku {} — koristim preporučeni",
+            hw.encoder.as_deref().unwrap_or(""),
+            target.video_codec
+        ));
+    }
     let video_encoder = if video {
-        hwaccel::video_encoder(hw.preferred, &target.video_codec).map(str::to_string)
+        izričit.or_else(|| hwaccel::video_encoder(hw.preferred, &target.video_codec).map(str::to_string))
     } else {
         None
+    };
+    // Kad je izabran HW enkoder, i pomoćne zastavice moraju biti njegove (npr. `-vaapi_device`).
+    let hw_za_ffmpeg = match video_encoder.as_deref() {
+        Some(name) if HwAccel::from_encoder(name) != HwAccel::None => HwAccel::from_encoder(name),
+        _ => hw.preferred,
     };
     let audio_encoder = if audio { Some(target.audio_codec.clone()) } else { None };
 
@@ -236,8 +262,16 @@ fn transcode_decision(
         audio_encoder,
         audio_channels: if audio { Some(target.audio_channels) } else { None },
         burn_subtitles: burn_subtitles && video,
-        hw: hw.preferred,
+        hw: hw_za_ffmpeg,
+        threads: if video { hw.threads } else { 0 },
+        hardware_decode: video && hw.hardware_decode,
     }
+}
+
+/// Kodek iz imena enkodera (`hevc_nvenc` → hevc, `libx264` → h264).
+fn kodek_iz_imena(encoder: &str) -> &'static str {
+    let name = encoder.to_ascii_lowercase();
+    if name.contains("265") || name.contains("hevc") { "hevc" } else { "h264" }
 }
 
 fn video_supported(media: &MediaInfo, profile: &Profile, reasons: &mut Vec<String>) -> bool {
@@ -296,6 +330,9 @@ mod tests {
             preferred: HwAccel::None,
             notes: Vec::new(),
             subtitles_filter: false,
+            encoder: None,
+            threads: 0,
+            hardware_decode: false,
         }
     }
 
@@ -305,6 +342,9 @@ mod tests {
             preferred: HwAccel::Nvenc,
             notes: Vec::new(),
             subtitles_filter: false,
+            encoder: None,
+            threads: 0,
+            hardware_decode: true,
         }
     }
 
@@ -476,5 +516,41 @@ mod tests {
         assert_eq!(decision.mode, PlaybackMode::Direct);
         assert!(!decision.protocol_info.contains("DLNA.ORG_PN"), "Xbox profil ne salje PN");
         assert!(decision.protocol_info.contains("video/mp4"));
+    }
+
+    #[test]
+    fn chosen_encoder_is_used_when_it_matches_the_codec() {
+        let mut hw = hw_soft();
+        hw.encoder = Some("libx264".to_string());
+        hw.threads = 6;
+        // mpeg2 na generičkom TV-u mora u transcode, a profil traži h264.
+        let decision = decide(&media("mpeg2", 1920, 1080, "ac3", 6), &profile("generic"), "mkv", false, &hw);
+        assert_eq!(decision.video_encoder.as_deref(), Some("libx264"));
+        assert_eq!(decision.threads, 6, "niti iz configa idu u odluku");
+    }
+
+    #[test]
+    fn mismatched_encoder_is_refused_with_a_reason() {
+        // Profil traži h264, a korisnik je izabrao hevc enkoder → ne smije ga uzeti.
+        let mut hw = hw_soft();
+        hw.encoder = Some("libx265".to_string());
+        let decision = decide(&media("mpeg2", 1920, 1080, "ac3", 6), &profile("generic"), "mkv", false, &hw);
+        let encoder = decision.video_encoder.as_deref().expect("mora nešto enkodirati");
+        assert!(encoder.contains("264"), "kodek mora ostati h264: {encoder}");
+        assert!(
+            decision.reasons.iter().any(|reason| reason.contains("ne odgovara kodeku")),
+            "korisnik mora vidjeti zašto: {:?}",
+            decision.reasons
+        );
+    }
+
+    #[test]
+    fn chosen_hardware_encoder_sets_the_hw_family_for_ffmpeg() {
+        let mut hw = hw_nvenc();
+        hw.encoder = Some("h264_nvenc".to_string());
+        let decision = decide(&media("mpeg2", 1920, 1080, "ac3", 6), &profile("generic"), "mkv", false, &hw);
+        assert_eq!(decision.video_encoder.as_deref(), Some("h264_nvenc"));
+        assert_eq!(decision.hw, HwAccel::Nvenc, "ffmpeg zastavice idu po izabranom enkoderu");
+        assert!(decision.hardware_decode);
     }
 }

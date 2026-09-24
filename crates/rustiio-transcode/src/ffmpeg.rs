@@ -36,6 +36,14 @@ pub fn build_args(request: &StartRequest<'_>) -> Vec<String> {
         args.push(format!("{:.3}", start_ms as f64 / 1000.0));
     }
 
+    // Hardversko dekodiranje: GPU raspakira sliku, pa procesor (ili GPU) enkodira.
+    // Bez ovoga CPU radi i dekodiranje i enkodiranje — a to je pola posla.
+    if decision.hardware_decode {
+        if let Some(zastavice) = hwaccel::decode_args(decision.hw, decision.video_encoder.as_deref()) {
+            args.extend(zastavice);
+        }
+    }
+
     args.push("-i".to_string());
     args.push(request.input.display().to_string());
 
@@ -59,6 +67,10 @@ pub fn build_args(request: &StartRequest<'_>) -> Vec<String> {
             if let Some(encoder) = &decision.video_encoder {
                 args.push("-c:v".to_string());
                 args.push(encoder.clone());
+                // Softverski enkoder: koliko niti smije uzeti (0 = sve jezgre).
+                if decision.threads > 0 && hwaccel::HwAccel::from_encoder(encoder) == hwaccel::HwAccel::None {
+                    push(&mut args, &["-threads", &decision.threads.to_string()]);
+                }
                 args.extend(hwaccel::encoder_args(
                     decision.hw,
                     decision.video_bitrate_kbps.unwrap_or(0),
@@ -170,6 +182,8 @@ mod tests {
             audio_channels: Some(2),
             burn_subtitles: false,
             hw,
+            threads: 0,
+            hardware_decode: false,
         }
     }
 
@@ -286,7 +300,67 @@ mod tests {
             preferred: HwAccel::Nvenc,
             notes: Vec::new(),
             subtitles_filter: false,
+            encoder: None,
+            threads: 0,
+            hardware_decode: true,
         };
         assert_eq!(hwaccel::video_encoder(support.preferred, "h264"), Some("h264_nvenc"));
+    }
+
+    #[test]
+    fn software_encoder_gets_the_configured_thread_count() {
+        let mut decision = decision(
+            PlaybackMode::Transcode { video: true, audio: true },
+            "mpegts",
+            Some("libx264"),
+            HwAccel::None,
+        );
+        decision.threads = 6;
+        let input = PathBuf::from("/media/film.mkv");
+        let joined = build_args(&request(&decision, "mkv", &input, None)).join(" ");
+        assert!(joined.contains("-c:v libx264"), "{joined}");
+        assert!(joined.contains("-threads 6"), "niti moraju stići do ffmpeg-a: {joined}");
+    }
+
+    #[test]
+    fn hardware_encoder_never_gets_threads() {
+        let mut decision = decision(
+            PlaybackMode::Transcode { video: true, audio: true },
+            "mpegts",
+            Some("h264_nvenc"),
+            HwAccel::Nvenc,
+        );
+        decision.threads = 6;
+        let input = PathBuf::from("/media/film.mkv");
+        let joined = build_args(&request(&decision, "mkv", &input, None)).join(" ");
+        assert!(!joined.contains("-threads"), "NVENC ne prima -threads: {joined}");
+    }
+
+    #[test]
+    fn hardware_decode_goes_before_the_input() {
+        let mut decision = decision(
+            PlaybackMode::Transcode { video: true, audio: true },
+            "mpegts",
+            Some("libx264"),
+            HwAccel::Nvenc,
+        );
+        decision.hardware_decode = true;
+        let input = PathBuf::from("/media/film.mkv");
+        let joined = build_args(&request(&decision, "mkv", &input, None)).join(" ");
+        assert!(joined.contains("-hwaccel cuda"), "nema hardverskog dekodiranja: {joined}");
+        assert!(joined.find("-hwaccel").unwrap() < joined.find("-i ").unwrap(), "hwaccel ide prije ulaza");
+    }
+
+    #[test]
+    fn decode_flags_are_absent_when_turned_off() {
+        let decision = decision(
+            PlaybackMode::Transcode { video: true, audio: true },
+            "mpegts",
+            Some("libx264"),
+            HwAccel::Nvenc,
+        );
+        let input = PathBuf::from("/media/film.mkv");
+        let joined = build_args(&request(&decision, "mkv", &input, None)).join(" ");
+        assert!(!joined.contains("-hwaccel"), "HW dekodiranje je isključeno: {joined}");
     }
 }

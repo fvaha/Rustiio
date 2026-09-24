@@ -184,6 +184,31 @@ export const FIELDS = {
     type: 'enum',
     options: ['auto', 'nvenc', 'qsv', 'vaapi', 'videotoolbox', 'amf', 'none'],
   },
+  'transcode.mode': {
+    label: { hr: 'Način rada', en: 'Mode' },
+    help: { hr: 'auto bira najbrže izmjereno; grafička/procesor/kombinirano (HW dekodiranje + procesor) možeš zadati ručno.', en: 'auto picks the fastest measured; GPU/CPU/hybrid (HW decode + CPU) can be forced.' },
+    type: 'enum',
+    options: ['auto', 'gpu', 'cpu', 'hybrid'],
+  },
+  'transcode.encoder': {
+    label: { hr: 'Enkoder', en: 'Encoder' },
+    help: { hr: 'Prazno → prema načinu rada i onome što stroj ima (npr. h264_nvenc, libx264, hevc_vaapi).', en: 'Empty → chosen from the mode and what the machine has (e.g. h264_nvenc, libx264, hevc_vaapi).' },
+    type: 'text',
+    mono: true,
+    placeholder: { hr: 'automatski', en: 'automatic' },
+  },
+  'transcode.threads': {
+    label: { hr: 'Niti procesora', en: 'CPU threads' },
+    help: { hr: 'Za softversko prekodiranje; 0 = sve jezgre (ffmpeg odluči). Grafički enkoderi niti ne koriste.', en: 'For software encoding; 0 = all cores (ffmpeg decides). Hardware encoders ignore it.' },
+    type: 'number',
+    min: 0,
+    max: 128,
+  },
+  'transcode.hardware_decode': {
+    label: { hr: 'Hardversko dekodiranje', en: 'Hardware decoding' },
+    help: { hr: 'GPU raspakira sliku i kad procesor enkodira — upola manje posla za CPU.', en: 'GPU decodes even when the CPU encodes — half the CPU work.' },
+    type: 'bool',
+  },
   'transcode.max_concurrent': {
     label: { hr: 'Paralelni strimovi', en: 'Concurrent streams' },
     help: { hr: 'Koliko istovremenih prekodiranja server dopušta.', en: 'How many transcodes may run at once.' },

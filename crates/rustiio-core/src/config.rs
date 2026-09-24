@@ -218,6 +218,26 @@ pub struct TranscodeSection {
     pub buffer_secs: u32,
     /// Ocituj trajanje preko ffprobe (potrebno za `TimeSeekRange`).
     pub probe_duration: bool,
+    /// Konkretan enkoder (`h264_nvenc`, `libx264`, ...); prazno = najbolji dostupni.
+    #[serde(default)]
+    pub encoder: String,
+    /// Način rada koji je korisnik odabrao: auto | gpu | cpu | hybrid.
+    #[serde(default = "default_mode")]
+    pub mode: String,
+    /// Niti koje softverski enkoder smije koristiti (0 = sve jezgre).
+    #[serde(default)]
+    pub threads: u32,
+    /// Hardversko dekodiranje (GPU) — vrijedi i kad enkodira procesor.
+    #[serde(default = "default_true")]
+    pub hardware_decode: bool,
+}
+
+fn default_mode() -> String {
+    "auto".to_string()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for TranscodeSection {
@@ -230,6 +250,10 @@ impl Default for TranscodeSection {
             max_concurrent: 2,
             buffer_secs: 30,
             probe_duration: true,
+            encoder: String::new(),
+            mode: default_mode(),
+            threads: 0,
+            hardware_decode: default_true(),
         }
     }
 }

@@ -75,7 +75,7 @@ pub struct Poster {
 }
 
 /// Red izvora: lokalno → TMDB (ključ ili web) → Wikipedia → TVmaze → Cover Art Archive.
-pub use enrich::{PassSummary, run_pass, run_until_done};
+pub use enrich::{PassSummary, forget_series_posters, run_pass, run_until_done};
 
 pub struct Enricher {
     agent: ureq::Agent,
@@ -130,6 +130,38 @@ impl Enricher {
         }
         let stem = video.file_stem()?.to_str()?;
         self.poster_for_query(item_id, &guess_title(stem))
+    }
+
+    /// Poster za **cijelu seriju**: jedna slika za sve epizode i sezone.
+    ///
+    /// Traži se po imenu serijala (ne po imenu epizode): u nazivu epizode su i
+    /// kvaliteta i release pa upit lako promaši i vrati tuđu sliku — zato su
+    /// dosad epizode iste serije imale svaka svoju, pogrešnu.
+    pub fn poster_for_series(
+        &self,
+        item_id: i64,
+        sample: &std::path::Path,
+        series_title: &str,
+    ) -> Option<Poster> {
+        if let Some(path) = cache::existing(&self.art_dir, item_id) {
+            return Some(Poster { bytes: 0, path, source: None });
+        }
+        if let Some((found_at, bytes)) = local::find_local(sample) {
+            let extension = local::extension_of(&bytes);
+            let path = cache::store(&self.art_dir, item_id, extension, &bytes).ok()?;
+            tracing::info!(id = item_id, from = %found_at.display(), "poster serijala uz datoteku");
+            return Some(Poster { path, source: Some(Source::Local), bytes: bytes.len() });
+        }
+        let stem = sample.file_stem()?.to_str()?;
+        let mut query = guess_title(stem);
+        query.title = series_title.trim().to_string();
+        query.is_series = true;
+        self.poster_for_query(item_id, &query)
+    }
+
+    /// Zaboravi keširanu sliku objekta (prije ponovnog dohvaćanja postera).
+    pub fn forget(&self, item_id: i64) {
+        let _ = cache::remove(&self.art_dir, item_id);
     }
 
     /// Poster za naslov (film, serija ili album).

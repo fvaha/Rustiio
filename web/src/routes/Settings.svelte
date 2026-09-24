@@ -1,5 +1,6 @@
 <script>
   // Postavke: **sva** polja configa, po sekcijama, s objašnjenjem i spremljenim stanjem.
+  // Sekcije su **tabovi iznad** — klik otvara samo tu sekciju, ne jedna duga strana.
   // Polja su opisana u lib/settings-schema.js — novo polje u configu se pojavi samo.
   import { onMount } from 'svelte'
   import { t, i18n } from '../lib/i18n.svelte.js'
@@ -7,6 +8,7 @@
   import { toast, refreshStatus } from '../lib/store.svelte.js'
   import { SECTIONS, fieldsOf, getPath, setPath, metaOf } from '../lib/settings-schema.js'
   import Field from '../components/Field.svelte'
+  import TranscodeScan from '../components/TranscodeScan.svelte'
 
   let config = $state(null)
   let original = $state(null)
@@ -17,6 +19,11 @@
   let rawOpen = $state(false)
   let rawText = $state('')
   let rawError = $state('')
+
+  // Aktivni tab. Adresa ostaje `#/settings` (sekcija se NE stavlja u adresu — router
+  // bi je čitao kao stranicu i vraćao na Pregled).
+  let tab = $state(sessionStorage.getItem('rustiio:settings-tab') ?? 'server')
+  $effect(() => sessionStorage.setItem('rustiio:settings-tab', tab))
 
   const hr = $derived(i18n.lang !== 'en')
   const text = (item) => (item && typeof item === 'object' ? (item[t('field.en')] ?? item.hr ?? '') : (item ?? ''))
@@ -124,32 +131,55 @@
     }
   }
 
-  /// Skok na sekciju: mijenja se **samo pomicanje**, ne adresa.
-  /// (Adresa `#server` bi routeru izgledala kao nepoznata ruta i vratila Overview.)
-  function jump(key, event) {
-    event?.preventDefault()
-    const target = document.getElementById(key)
-    if (!target) return
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
+  const aktivna = $derived(SECTIONS.find((section) => section.key === tab) ?? null)
   const counts = $derived(
     config ? Object.fromEntries(SECTIONS.map((section) => [section.key, fieldsOf(section.key, config).length])) : {},
+  )
+  // Koliko polja po sekciji čeka restart — tab to pokaže sitnom točkom.
+  const ceka = $derived(
+    config
+      ? Object.fromEntries(
+          SECTIONS.map((section) => [
+            section.key,
+            fieldsOf(section.key, config).some((field) => changed.includes(field.path) && !field.path.startsWith('ui.')),
+          ]),
+        )
+      : {},
   )
 </script>
 
 <div class="settings">
-  <nav class="settings-nav" aria-label={t('set.settings_sections')}>
+  <nav class="tabs" aria-label={t('set.settings_sections')} role="tablist">
     {#each SECTIONS as section}
-      <a href="#{section.key}" onclick={(event) => jump(section.key, event)}>
+      <button
+        type="button"
+        role="tab"
+        class="tab"
+        class:active={tab === section.key}
+        aria-selected={tab === section.key}
+        onclick={() => (tab = section.key)}
+      >
+        <span aria-hidden="true">{section.icon}</span>
         <span>{text(section.title)}</span>
         <span class="n">{counts[section.key] ?? 0}</span>
-      </a>
+        {#if ceka[section.key]}<span class="dot" title={t('set.restart_pending')}></span>{/if}
+      </button>
     {/each}
-    <a href="#napredno" onclick={(event) => jump('napredno', event)}><span>{t('set.advanced')}</span><span class="n">JSON</span></a>
+    <button
+      type="button"
+      role="tab"
+      class="tab"
+      class:active={tab === 'napredno'}
+      aria-selected={tab === 'napredno'}
+      onclick={() => (tab = 'napredno')}
+    >
+      <span aria-hidden="true">⌘</span>
+      <span>{t('set.advanced')}</span>
+      <span class="n">JSON</span>
+    </button>
   </nav>
 
-  <div>
+  <div class="sadrzaj">
     {#if problem}
       <div class="panel" style="border-color: rgba(251, 113, 133, 0.5); margin-bottom: 16px">
         <div class="panel-body" style="padding-top: 14px">
@@ -176,27 +206,7 @@
         <div class="skeleton" style="height: 88px"></div>
         <div class="skeleton" style="height: 188px; margin-top: 12px"></div>
       </div></div>
-    {:else}
-      {#each SECTIONS as section}
-        <section class="panel" id={section.key}>
-          <div class="panel-head">
-            <h2><span aria-hidden="true">{section.icon}</span> {text(section.title)}</h2>
-            <p>{text(section.desc)}</p>
-          </div>
-          <div class="panel-body">
-            {#each fieldsOf(section.key, config) as field (field.path)}
-              <Field
-                path={field.path}
-                meta={metaOf(field.path, field.value)}
-                value={field.value}
-                changed={changed.some((item) => item === field.path || item.startsWith(`${field.path}[`))}
-                onchange={(next) => change(field.path, next)}
-              />
-            {/each}
-          </div>
-        </section>
-      {/each}
-
+    {:else if tab === 'napredno'}
       <section class="panel" id="napredno">
         <div class="panel-head">
           <h2><span aria-hidden="true">⌘</span> {t('set.advanced')}</h2>
@@ -216,7 +226,30 @@
           {/if}
         </div>
       </section>
+    {:else if aktivna}
+      <section class="panel" id={aktivna.key}>
+        <div class="panel-head">
+          <h2><span aria-hidden="true">{aktivna.icon}</span> {text(aktivna.title)}</h2>
+          <p>{text(aktivna.desc)}</p>
+        </div>
+        <div class="panel-body">
+          {#each fieldsOf(aktivna.key, config) as field (field.path)}
+            <Field
+              path={field.path}
+              meta={metaOf(field.path, field.value)}
+              value={field.value}
+              changed={changed.some((item) => item === field.path || item.startsWith(`${field.path}[`))}
+              onchange={(next) => change(field.path, next)}
+            />
+          {/each}
+          {#if aktivna.key === 'transcode'}
+            <TranscodeScan />
+          {/if}
+        </div>
+      </section>
+    {/if}
 
+    {#if config}
       <div class="savebar">
         <span class="badge" class:info={changed.length > 0} class:ok={changed.length === 0}>
           {changed.length > 0
@@ -240,3 +273,62 @@
     {/if}
   </div>
 </div>
+
+<style>
+  /* Tabovi iznad: jedna sekcija u fokusu, ostalo je jedan klik daleko. */
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 0 12px;
+    border-bottom: 1px solid var(--border, #262b35);
+    margin-bottom: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--background, #0b0d12);
+  }
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--border, #262b35);
+    background: color-mix(in srgb, var(--card, #14171d) 70%, transparent);
+    color: inherit;
+    font: inherit;
+    font-size: 0.9rem;
+    border-radius: 999px;
+    padding: 0.4rem 0.85rem;
+    cursor: pointer;
+  }
+  .tab:hover {
+    border-color: color-mix(in srgb, #22c55e 45%, var(--border, #262b35));
+  }
+  .tab.active {
+    border-color: #22c55e;
+    background: color-mix(in srgb, #22c55e 16%, transparent);
+    color: #4ade80;
+    font-weight: 600;
+  }
+  .tab .n {
+    font-size: 0.7rem;
+    opacity: 0.6;
+    font-variant-numeric: tabular-nums;
+  }
+  .tab .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--warn, #fbbf24);
+  }
+  @media (max-width: 700px) {
+    .tabs {
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      padding-bottom: 8px;
+    }
+    .tab {
+      white-space: nowrap;
+    }
+  }
+</style>

@@ -77,9 +77,6 @@
     <option value="folder">{t('common.folder')}</option>
   </select>
   <span class="pill">{total} {t('library.items_count')}</span>
-  <span class="spacer"></span>
-  <a class="btn" href="/api/export?format=csv" download>CSV</a>
-  <a class="btn" href="/api/export?format=json" download>JSON</a>
 </div>
 
 <div class="crumbs" style="margin-bottom: 12px">
@@ -97,28 +94,38 @@
 {:else}
   <div class="posters">
     {#each items as item (item.id)}
-      {#if item.container}
-        <button class="folder" style="text-align: left; font: inherit; color: inherit" onclick={() => openFolder(item)}>
-          <span style="font-size: 20px">🗂</span>
-          <span class="grow" style="min-width: 0">
-            <div class="name" style="white-space: normal">{item.title}</div>
-            <div class="sub muted">{item.children} {t('library.items_count')}</div>
-          </span>
-        </button>
-      {:else}
-        <div class="poster" onclick={() => (selected = selected?.id === item.id ? null : item)} role="button" tabindex="0">
-          {#if item.poster}
-            <img class="img" src={item.poster} alt={item.title} loading="lazy" />
-          {:else}
-            <div class="img none">🎞</div>
-          {/if}
-          <div class="cap">
-            <div class="name">{item.title}</div>
-            <div class="sub">{bytes(item.size)} · {item.kind}</div>
+      <!-- Jedna vrsta kartice za sve: serija ima poster kao i film — dosad je
+           serija (container) crtala samo 🗂, pa je poster iz API-ja propadao. -->
+      <div
+        class="poster"
+        class:open={item.container}
+        onclick={() => (item.container ? openFolder(item) : (selected = selected?.id === item.id ? null : item))}
+        role="button"
+        tabindex="0"
+        onkeydown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            item.container ? openFolder(item) : (selected = item)
+          }
+        }}
+      >
+        {#if item.poster}
+          <img class="img" src={item.poster} alt={item.title} loading="lazy" />
+        {:else}
+          <div class="img none">{item.container ? '🗂' : '🎞'}</div>
+        {/if}
+        <div class="cap">
+          <div class="name" title={item.title}>{item.title}</div>
+          <div class="sub">
+            {#if item.container}
+              {item.children} {t('library.items_count')}
+            {:else}
+              {bytes(item.size)} · {item.kind}
+            {/if}
           </div>
-          {#if item.subtitle}<span class="tag">SRT</span>{/if}
         </div>
-      {/if}
+        {#if item.subtitle}<span class="tag">SRT</span>{/if}
+      </div>
     {/each}
   </div>
 {/if}

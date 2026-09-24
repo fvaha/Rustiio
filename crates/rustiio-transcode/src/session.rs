@@ -203,6 +203,9 @@ mod tests {
             preferred: HwAccel::None,
             notes: Vec::new(),
             subtitles_filter: false,
+            encoder: None,
+            threads: 0,
+            hardware_decode: true,
         }
     }
 
@@ -220,6 +223,8 @@ mod tests {
             audio_channels: None,
             burn_subtitles: false,
             hw: HwAccel::None,
+            threads: 0,
+            hardware_decode: false,
         }
     }
 

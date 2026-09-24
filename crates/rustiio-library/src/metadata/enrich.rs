@@ -45,16 +45,50 @@ pub fn run_pass(
     let pending = items::items_needing_poster(store, batch, after_id)?;
     let mut summary = PassSummary { processed: pending.len(), last_id: after_id, ..PassSummary::default() };
 
-    for (id, path) in pending {
+    // Pravilo: jedna serija — jedna slika. Serijal se u ovoj turi traži samo
+    // jednom, a njegove epizode dobiju isti poster (i sezone s njima).
+    let mut rijeseni: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for (id, path, series) in pending {
         summary.last_id = id;
-        match enricher.poster_for(id, &path) {
+        let serija = series.map(|ime| ime.trim().to_string()).filter(|ime| !ime.is_empty());
+        if let Some(ime) = &serija
+            && !rijeseni.insert(ime.clone())
+        {
+            continue;
+        }
+        let nadjeno = match &serija {
+            Some(ime) => enricher.poster_for_series(id, &path, ime),
+            None => enricher.poster_for(id, &path),
+        };
+        match nadjeno {
             Some(poster) => {
                 let file = poster.path.file_name().map(|name| name.to_string_lossy().to_string());
-                items::update_poster(store, id, file.as_deref(), poster.source.map(|s| s.as_str()))?;
+                match &serija {
+                    Some(ime) => {
+                        let broj = items::update_poster_for_series(
+                            store,
+                            ime,
+                            file.as_deref(),
+                            poster.source.map(|s| s.as_str()),
+                        )?;
+                        tracing::info!(series = %ime, epizoda = id, epizoda_broj = broj, poster = ?file, "poster serijala");
+                    }
+                    None => {
+                        items::update_poster(store, id, file.as_deref(), poster.source.map(|s| s.as_str()))?;
+                    }
+                }
                 summary.found += 1;
             }
             None if mark_missing => {
-                items::update_poster(store, id, None, Some("none"))?;
+                match &serija {
+                    Some(ime) => {
+                        items::update_poster_for_series(store, ime, None, Some("none"))?;
+                    }
+                    None => {
+                        items::update_poster(store, id, None, Some("none"))?;
+                    }
+                }
                 summary.missing += 1;
             }
             None => {
@@ -63,6 +97,16 @@ pub fn run_pass(
         }
     }
     Ok(summary)
+}
+
+/// Očisti postere svih serijala i njihove keširane slike, da se dohvate iznova
+/// po imenu serijala (popravak starih, pogrešnih postera po epizodama).
+pub fn forget_series_posters(store: &Store, enricher: &Enricher) -> rusqlite::Result<usize> {
+    let ids = items::clear_series_posters(store)?;
+    for id in &ids {
+        enricher.forget(*id);
+    }
+    Ok(ids.len())
 }
 
 /// Prolaz do kraja (u turima od `batch`), najvise `max_batches` tura.

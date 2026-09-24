@@ -433,19 +433,54 @@ pub fn items_needing_poster(
     store: &Store,
     limit: usize,
     after_id: i64,
-) -> rusqlite::Result<Vec<(i64, PathBuf)>> {
+) -> rusqlite::Result<Vec<(i64, PathBuf, Option<String>)>> {
     let conn = store.conn();
     // Kursor po `id` (ne po `added_at`): objekt koji ne uspije ostaje bez postera i
     // bez kursora bi se vracao u svakoj sljedećoj turi — prolaz nikad ne bi zavrsio.
     let mut statement = conn.prepare(
-        "SELECT id, path FROM items
+        "SELECT id, path, series FROM items
          WHERE kind = 'video' AND poster IS NULL AND poster_source IS NULL AND id > ?2
          ORDER BY id ASC LIMIT ?1",
     )?;
     let rows = statement.query_map(params![limit as i64, after_id], |row| {
-        Ok((row.get::<_, i64>(0)?, PathBuf::from(row.get::<_, String>(1)?)))
+        Ok((row.get::<_, i64>(0)?, PathBuf::from(row.get::<_, String>(1)?), row.get::<_, Option<String>>(2)?))
     })?;
     rows.collect()
+}
+
+/// Jedna serija — jedan poster: ista slika za sve njezine epizode.
+pub fn update_poster_for_series(
+    store: &Store,
+    series: &str,
+    poster: Option<&str>,
+    source: Option<&str>,
+) -> rusqlite::Result<usize> {
+    let conn = store.conn();
+    conn.execute(
+        "UPDATE items SET poster = ?2, poster_source = ?3 WHERE series = ?1",
+        params![series, poster, source],
+    )
+}
+
+/// Priprema za ponovno dohvaćanje: briše postere svih serijala i vraća id-eve
+/// čije keširane slike treba izbrisati (inače bi `poster_for` vratio staru).
+pub fn clear_series_posters(store: &Store) -> rusqlite::Result<Vec<i64>> {
+    let conn = store.conn();
+    let ids = {
+        let mut statement = conn.prepare(
+            "SELECT id FROM items
+             WHERE series IS NOT NULL AND series <> ''
+               AND (poster IS NOT NULL OR poster_source IS NOT NULL)",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+        rows.collect::<rusqlite::Result<Vec<i64>>>()?
+    };
+    conn.execute(
+        "UPDATE items SET poster = NULL, poster_source = NULL
+         WHERE series IS NOT NULL AND series <> ''",
+        [],
+    )?;
+    Ok(ids)
 }
 
 /// Zaboravi "probano, nema ga" — sljedeci prolaz ih pokusa ponovno.

@@ -285,7 +285,17 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.02em; font-weight: 620; }
 .crumbs button, .crumbs button.b { appearance: none; background: none; border: 0; color: var(--accent); font: inherit; cursor: pointer; padding: 0; }
 .crumbs .sep { color: var(--faint); }
 
-.posters { display: grid; grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)); gap: 16px; }
+.posters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-auto-rows: 1fr; /* svi redovi iste visine — kartice se ne ljuljaju */
+  gap: 14px;
+  align-items: stretch;
+}
+/* Ključno: bez `min-width: 0` dugo ime (npr. `www.UIndex.org - Slow.Horses.S06E02…`)
+   razvuče svoj stupac i mreža izgleda razbacano. */
+.posters > * { min-width: 0; }
+.posters .folder, .posters .poster { height: 100%; }
 
 .poster {
   position: relative; border: 1px solid var(--line); border-radius: var(--radius);
@@ -295,8 +305,22 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.02em; font-weight: 620; }
 .poster:hover { transform: translateY(-3px); border-color: var(--accent); box-shadow: var(--shadow-2); }
 .poster .img { aspect-ratio: 2 / 3; width: 100%; display: block; background: #0a0d12 center/cover no-repeat; }
 .poster .img.none { display: grid; place-items: center; color: #2f3746; font-size: 30px; }
+.poster { display: flex; flex-direction: column; }
+.poster .img { flex: 0 0 auto; }
 .poster .cap { padding: 9px 10px 11px; }
-.poster .cap .t, .poster .cap .name { font-size: 13px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.poster .cap .t, .poster .cap .name, .folder .name {
+  font-size: 13px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+}
+.folder { min-height: 62px; }
+.folder .grow { min-width: 0; }
 .poster .cap .s, .poster .cap .sub { color: var(--faint); font-size: 11.5px; margin-top: 3px; }
 .poster .over {
   position: absolute; inset: auto 0 0 0; padding: 10px;

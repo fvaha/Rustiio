@@ -57,7 +57,7 @@ struct Group {
 }
 
 /// Posloži jedan video korijen: epizode u serije/sezone, filmovi po abecedi.
-pub fn arrange_video(catalog: &mut Catalog, root_id: &str) -> ArrangeSummary {
+pub fn arrange_video(catalog: &mut Catalog, root_id: &str, pruni_prazne: bool) -> ArrangeSummary {
     let mut summary = ArrangeSummary::default();
 
     let mut groups: BTreeMap<String, Group> = BTreeMap::new();
@@ -179,8 +179,11 @@ pub fn arrange_video(catalog: &mut Catalog, root_id: &str) -> ArrangeSummary {
         node.children.retain(|child| !moved.contains(child));
     }
 
-    // 2) Očisti mape koje su ostale prazne (i njihove pretke).
-    prune_empty(catalog, root_id, &lost_children);
+    // 2) Očisti mape bez videa (i njihove pretke). Kod mješovitog korijena mapa s
+    // glazbom nije smeće, pa se tamo ne dira.
+    if pruni_prazne {
+        prune_empty(catalog, root_id, &lost_children);
+    }
 
     // 3) Slaganje djece korijena: serije, filmovi, pa ostale mape i datoteke.
     // Serije čitamo iz karte (tek su umetnute), a ne iz djece korijena — korijen još
@@ -254,9 +257,9 @@ pub fn sort_only(catalog: &mut Catalog, root_id: &str) -> usize {
 /// ostalo samo uredan red (mape pa datoteke, abecedno).
 pub fn arrange(catalog: &mut Catalog, root_id: &str, kind: rustiio_core::config::RootKind) -> ArrangeSummary {
     match kind {
-        rustiio_core::config::RootKind::Video | rustiio_core::config::RootKind::Mixed => {
-            arrange_video(catalog, root_id)
-        }
+        rustiio_core::config::RootKind::Video => arrange_video(catalog, root_id, true),
+        // Mješoviti korijen: mape bez videa mogu biti glazba — ne brišu se.
+        rustiio_core::config::RootKind::Mixed => arrange_video(catalog, root_id, false),
         _ => {
             sort_only(catalog, root_id);
             ArrangeSummary::default()
@@ -372,32 +375,44 @@ fn movie_title(parsed: &ParsedName, fallback: &str) -> String {
     }
 }
 
-/// Prazne mape koje su ostale nakon premještanja epizoda se brišu.
-fn prune_empty(catalog: &mut Catalog, root_id: &str, lost: &HashSet<String>) {
-    let mut candidates: Vec<String> = lost.iter().cloned().collect();
-    let mut removed = HashSet::new();
+/// Mape bez ijednog videa se brišu — takve nisu dio biblioteke.
+///
+/// Prije se brisalo samo mape koje su ostale *prazne* nakon premještanja epizoda,
+/// pa je mapa čiji je jedini sadržaj prazna `Screens` (release smeće) ostajala u
+/// korijenu kao kartica s imenom torrenta.
+fn prune_empty(catalog: &mut Catalog, root_id: &str, _lost: &HashSet<String>) {
+    let mape: Vec<String> = descendants(catalog, root_id)
+        .into_iter()
+        .filter(|node| node.kind == NodeKind::Container && !is_synthetic(node))
+        .map(|node| node.id.clone())
+        .collect();
 
-    while let Some(id) = candidates.pop() {
-        if id == root_id || removed.contains(&id) {
-            continue;
-        }
-        let Some(node) = catalog.get(&id) else { continue };
-        if node.kind != NodeKind::Container || is_synthetic(node) {
-            continue;
-        }
-        if !catalog.children(&id).is_empty() {
-            continue;
-        }
-        let parent_id = node.parent_id.clone();
-        catalog.remove(&id);
-        removed.insert(id);
-        // Ako je i ta mapa ostala prazna, ide i ona.
-        candidates.push(parent_id);
+    // Gleda se stanje **prije** brisanja, pa roditelj nestaje zajedno s djetetom.
+    let removed: HashSet<String> = mape.into_iter().filter(|id| !has_video(catalog, id)).collect();
+
+    for id in &removed {
+        catalog.remove(id);
     }
-
     if !removed.is_empty() {
         detach(catalog, root_id, &removed);
     }
+}
+
+/// Ima li u podstablu ijedan video (ni sam čvor se ne računa ako nije video).
+fn has_video(catalog: &Catalog, id: &str) -> bool {
+    let mut red: Vec<String> = vec![id.to_string()];
+    let mut videno: HashSet<String> = HashSet::new();
+    while let Some(trenutni) = red.pop() {
+        if !videno.insert(trenutni.clone()) {
+            continue;
+        }
+        let Some(node) = catalog.get(&trenutni) else { continue };
+        if node.kind == NodeKind::Video {
+            return true;
+        }
+        red.extend(node.children.iter().cloned());
+    }
+    false
 }
 
 /// Makni obrisane čvorove iz popisa djece svih roditelja.
@@ -466,8 +481,12 @@ mod tests {
     }
 
     fn catalog_for(dir: &std::path::Path, extensions: &[&str]) -> Catalog {
+        catalog_for_kind(dir, extensions, RootKind::Video)
+    }
+
+    fn catalog_for_kind(dir: &std::path::Path, extensions: &[&str], kind: RootKind) -> Catalog {
         let options = ScanOptions::new(
-            vec![Root { label: "Serije".to_string(), path: dir.to_path_buf(), kind: RootKind::Video }],
+            vec![Root { label: "Serije".to_string(), path: dir.to_path_buf(), kind }],
             extensions.iter().map(|ext| ext.to_string()).collect(),
         );
         scan(&options)
@@ -497,7 +516,7 @@ mod tests {
 
         let mut catalog = catalog_for(&dir, &["mkv"]);
         let root = root_id(&catalog);
-        let summary = arrange_video(&mut catalog, &root);
+        let summary = arrange_video(&mut catalog, &root, true);
 
         assert_eq!(summary.series, 3, "Furious, Dark Matter, The Bureau");
         assert_eq!(titles(&catalog, &root), vec!["Dark Matter", "Furious", "The Bureau"], "serije abecedno");
@@ -524,7 +543,7 @@ mod tests {
         let before = titles(&catalog, &root);
         let series_before = titles(&catalog, &dark.id);
         let season_before = titles(&catalog, &season.id);
-        arrange_video(&mut catalog, &root);
+        arrange_video(&mut catalog, &root, true);
         assert_eq!(titles(&catalog, &root), before, "korijen ostaje isti");
         assert_eq!(titles(&catalog, &dark.id), series_before, "serija ostaje ista");
         assert_eq!(titles(&catalog, &season.id), season_before, "epizode ostaju iste");
@@ -538,7 +557,7 @@ mod tests {
         write(&dir, "OvdjeJeBilaSerija S01E01 1080p/S01E01.mkv");
         let mut catalog = catalog_for(&dir, &["mkv"]);
         let root = root_id(&catalog);
-        arrange_video(&mut catalog, &root);
+        arrange_video(&mut catalog, &root, true);
 
         let root_children = catalog.children(&root);
         assert!(
@@ -558,7 +577,7 @@ mod tests {
         write(&dir, "Zlo/Sezona 2/01.mkv");
         let mut catalog = catalog_for(&dir, &["mkv"]);
         let root = root_id(&catalog);
-        arrange_video(&mut catalog, &root);
+        arrange_video(&mut catalog, &root, true);
 
         let zlo = catalog.children(&root).remove(0);
         assert_eq!(zlo.title, "Zlo");
@@ -574,7 +593,7 @@ mod tests {
         write(&dir, "Neka Serija E05 1080p.mkv");
         let mut catalog = catalog_for(&dir, &["mkv"]);
         let root = root_id(&catalog);
-        arrange_video(&mut catalog, &root);
+        arrange_video(&mut catalog, &root, true);
 
         let series = catalog.children(&root).remove(0);
         assert_eq!(series.title, "Neka Serija", "naziv i sezona se čitaju iz imena datoteke");
@@ -590,7 +609,7 @@ mod tests {
         write(&dir, "Podmapa/Nešto.mkv");
         let mut catalog = catalog_for(&dir, &["mkv"]);
         let root = root_id(&catalog);
-        let summary = arrange_video(&mut catalog, &root);
+        let summary = arrange_video(&mut catalog, &root, true);
 
         assert_eq!(summary.movies, 2, "dva filma u korijenu; onaj u podmapi ostaje u svojoj mapi");
         let titles = titles(&catalog, &root);
@@ -607,10 +626,37 @@ mod tests {
         let dir = temp_dir("sort");
         write(&dir, "b/Song.mp3");
         write(&dir, "a/Song.mp3");
-        let mut catalog = catalog_for(&dir, &["mkv"]);
+        let mut catalog = catalog_for_kind(&dir, &["mkv", "mp3"], RootKind::Mixed);
         let root = root_id(&catalog);
         sort_only(&mut catalog, &root);
         assert_eq!(titles(&catalog, &root), vec!["a", "b"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn folder_with_only_junk_subfolders_is_removed() {
+        // Točno slučaj s boxa: epizoda se preselila u seriju, a u mapi je ostala
+        // samo prazna `Screens`. Mapa ne smije ostati kao kartica u korijenu.
+        let dir = temp_dir("screens");
+        write(&dir, "www.UIndex.org - Slow.Horses.S06E02.1080p/Screens/slika.jpg");
+        write(&dir, "www.UIndex.org - Slow.Horses.S06E02.1080p/slow.horses.s06e02.1080p.mkv");
+        let mut catalog = catalog_for(&dir, &["mkv"]);
+        let root = root_id(&catalog);
+        arrange_video(&mut catalog, &root, true);
+        assert_eq!(titles(&catalog, &root), vec!["Slow Horses"], "ostala je mapa smeća");
+        assert_eq!(catalog.children("s:slow-horses").len(), 1, "sezona mora biti jedna");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mixed_root_keeps_folders_without_video() {
+        // Glazba u mješovitom korijenu nije smeće — mape se ne brišu.
+        let dir = temp_dir("mixed");
+        write(&dir, "Glazba/album/pjesma.mp3");
+        let mut catalog = catalog_for_kind(&dir, &["mkv", "mp3"], RootKind::Mixed);
+        let root = root_id(&catalog);
+        arrange_video(&mut catalog, &root, false);
+        assert_eq!(titles(&catalog, &root), vec!["Glazba"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

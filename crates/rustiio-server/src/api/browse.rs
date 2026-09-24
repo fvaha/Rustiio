@@ -4,7 +4,7 @@
 //! vrsta, veličina, poster, izravni link). Poster dolazi iz istog izvora kao za DIDL
 //! ([`StoreArt`]), pa browser i TV nikad ne tvrde različito.
 //!
-//! Uz to: `/api/export` (CSV/JSON popis cijele biblioteke) i `/api/items/{id}`.
+//! Uz to: `/api/items/{id}` (jedan objekt).
 
 use axum::Router;
 use axum::extract::{Path, Query, State};
@@ -23,10 +23,7 @@ use crate::state::AppState;
 const MAX_LIMIT: usize = 500;
 
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/api/browse", get(api_browse))
-        .route("/api/items/{id}", get(api_item))
-        .route("/api/export", get(api_export))
+    Router::new().route("/api/browse", get(api_browse)).route("/api/items/{id}", get(api_item))
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,7 +45,7 @@ async fn api_browse(State(state): State<AppState>, Query(query): Query<BrowseQue
     let Some(node) = catalog.get(&id) else {
         return fail(StatusCode::NOT_FOUND, format!("nema objekta {id}"));
     };
-    let art = StoreArt::new(state.store.clone(), state.base_url.clone());
+    let art = StoreArt::new(state.store.clone(), state.base_url.clone()).with_catalog(state.catalog.clone());
 
     let mut items: Vec<(bool, String, Value)> = catalog
         .children(&id)
@@ -94,60 +91,13 @@ async fn api_item(State(state): State<AppState>, Path(id): Path<String>) -> Resp
     let Some(node) = catalog.get(&id) else {
         return fail(StatusCode::NOT_FOUND, format!("nema objekta {id}"));
     };
-    let art = StoreArt::new(state.store.clone(), state.base_url.clone());
+    let art = StoreArt::new(state.store.clone(), state.base_url.clone()).with_catalog(state.catalog.clone());
     axum::Json(json!({
         "item": project(node, &art, &state),
         "putanja": node.path.display().to_string(),
         "djeca": node.children.len(),
     }))
     .into_response()
-}
-
-#[derive(Debug, Deserialize)]
-struct ExportQuery {
-    /// `csv` (zadano) ili `json`.
-    format: Option<String>,
-}
-
-/// `GET /api/export?format=csv|json` — cijela biblioteka u jednoj datoteci.
-///
-/// Namjerno jednostavno: ravne kolone koje tablica/urednik mogu pročitati.
-async fn api_export(State(state): State<AppState>, Query(query): Query<ExportQuery>) -> Response {
-    let catalog = state.catalog.read().await;
-    let art = StoreArt::new(state.store.clone(), state.base_url.clone());
-    let rows: Vec<Node> = catalog.nodes().filter(|node| !node.is_container()).cloned().collect();
-    let items: Vec<Value> = rows.iter().map(|node| project(node, &art, &state)).collect();
-
-    match query.format.as_deref().unwrap_or("csv") {
-        "json" => axum::Json(json!({ "items": items, "count": items.len() })).into_response(),
-        _ => {
-            let mut csv = String::from("id,naslov,vrsta,godina,velicina_b,putanja,poster,link\n");
-            for (node, item) in rows.iter().zip(&items) {
-                let title = csv_field(&node.title);
-                let path = csv_field(&node.path.display().to_string());
-                let poster = item.get("poster").and_then(Value::as_str).unwrap_or("");
-                let play = item.get("play").and_then(Value::as_str).unwrap_or("");
-                let year = item.get("year").map(|year| year.to_string()).unwrap_or_default();
-                csv.push_str(&format!(
-                    "{},{title},{},{year},{},{path},{poster},{play}\n",
-                    node.id,
-                    kind_name(node.kind),
-                    node.size
-                ));
-            }
-            (
-                [
-                    (axum::http::header::CONTENT_TYPE, "text/csv; charset=utf-8"),
-                    (
-                        axum::http::header::CONTENT_DISPOSITION,
-                        "attachment; filename=\"rustiio-biblioteka.csv\"",
-                    ),
-                ],
-                csv,
-            )
-                .into_response()
-        }
-    }
 }
 
 /// Jedan objekt u obliku koji web sučelje koristi.
@@ -188,15 +138,6 @@ fn kind_name(kind: rustiio_library::NodeKind) -> String {
     .to_string()
 }
 
-/// Naslov/putanja za CSV: navodnici oko svega što ima zarez ili navodnik.
-fn csv_field(text: &str) -> String {
-    if text.contains(',') || text.contains('"') || text.contains('\n') {
-        format!("\"{}\"", text.replace('"', "\"\""))
-    } else {
-        text.to_string()
-    }
-}
-
 /// Minimalno kodiranje za ime datoteke u URL-u (razmak, dijakritika, `#`).
 fn urlencode(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -216,13 +157,6 @@ fn fail(status: StatusCode, message: impl Into<String>) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn csv_field_quotes_separators() {
-        assert_eq!(csv_field("Sicario"), "Sicario");
-        assert_eq!(csv_field("Zestoki, decki"), "\"Zestoki, decki\"");
-        assert_eq!(csv_field("On je rekao \"zdravo\""), "\"On je rekao \"\"zdravo\"\"\"");
-    }
 
     #[test]
     fn urlencode_escapes_spaces_and_unicode() {
