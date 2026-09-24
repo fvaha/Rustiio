@@ -100,7 +100,9 @@ sed -i -e "s#^ExecStart=.*#ExecStart=$PREFIX/bin/rustiio run#" \
        -e "s#^Environment=RUSTIIO_CONFIG_DIR=.*#Environment=RUSTIIO_CONFIG_DIR=$STATE_DIR#" \
        "$unit"
 systemctl daemon-reload
-systemctl enable --now rustiio.service >/dev/null
+systemctl enable rustiio.service >/dev/null
+# `enable --now` ne restarta vec aktivni servis — a mi smo upravo zamijenili binarni fajl.
+systemctl restart rustiio.service
 log "systemd: rustiio.service aktivan ($(systemctl is-active rustiio.service))"
 
 # --- 5. provjera -------------------------------------------------------------
