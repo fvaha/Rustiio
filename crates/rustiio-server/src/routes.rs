@@ -9,7 +9,7 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, Method, StatusCode, header};
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
 use serde_json::json;
 use tokio_util::io::ReaderStream;
@@ -31,7 +31,6 @@ const XML_CONTENT_TYPE: &str = "text/xml; charset=\"utf-8\"";
 /// Sastavi router (bez bindanja — to radi `apps/rustiio`).
 pub fn router(state: AppState) -> Router {
     Router::new()
-        .route("/", get(index))
         .route("/healthz", get(health))
         .route("/rootDesc.xml", get(root_desc))
         .route("/ContentDirectory/scpd.xml", get(content_directory_scpd))
@@ -51,7 +50,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/devices", get(api_devices))
         .route("/api/profiles", get(api_profiles))
         .route("/api/profiles/reload", post(api_profiles_reload))
-        .route("/api/profile/{key}", get(api_profile_for_device))
+        .route("/api/profile/{key}", get(api_profile_for_device).post(crate::api::profiles::save))
         .route("/api/streams", get(api_streams))
         .route("/api/search", get(api_search))
         .route("/api/library", get(api_library))
@@ -61,6 +60,11 @@ pub fn router(state: AppState) -> Router {
         .route("/art/{id}", get(api_art))
         .route("/api/posters", get(api_posters))
         .route("/api/posters/refresh", post(api_posters_refresh))
+        .merge(crate::api::browse::routes())
+        .merge(crate::api::stats::routes())
+        .merge(crate::api::logs::routes())
+        .merge(crate::api::settings::routes())
+        .merge(crate::assets::routes())
         .with_state(state)
         .layer(TraceLayer::new_for_http())
 }
@@ -1147,6 +1151,7 @@ async fn api_status(State(state): State<AppState>) -> Response {
             "devices": state.capture.len(),
         },
         "views": state.config.library.views,
+        "ui_language": state.config.ui.language,
         "uptime_secs": state.uptime_secs(),
         "update_id": catalog.update_id,
         "items": catalog.len(),
@@ -1174,56 +1179,6 @@ async fn health(State(state): State<AppState>) -> Response {
         "items": catalog.len(),
     }))
     .into_response()
-}
-
-async fn index(State(state): State<AppState>) -> Response {
-    let catalog = state.catalog.read().await;
-    let page = format!(
-        r#"<!doctype html>
-<html lang="hr"><head><meta charset="utf-8"><title>{app}</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
- :root {{ color-scheme: dark; }}
- body {{ margin:0; font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
-        background:#0b0d10; color:#e6e8eb; }}
- .wrap {{ max-width: 720px; margin: 0 auto; padding: 56px 24px; }}
- h1 {{ margin:0 0 4px; font-size:26px; letter-spacing:-.02em; }}
- .muted {{ color:#8b949e; }}
- .card {{ background:#12151a; border:1px solid #1f242b; border-radius:14px; padding:18px 20px; margin-top:22px; }}
- a {{ color:#7cc4ff; text-decoration:none; }} a:hover {{ text-decoration:underline; }}
- code {{ background:#1a1f26; padding:2px 6px; border-radius:6px; }}
- .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-top:14px; }}
- .kpi {{ background:#171b21; border:1px solid #232932; border-radius:10px; padding:12px 14px; }}
- .kpi b {{ display:block; font-size:22px; }}
-</style></head><body><div class="wrap">
- <h1>{app} <span class="muted">v{version}</span></h1>
- <div class="muted">{friendly} — DLNA/UPnP media server radi.</div>
- <div class="grid">
-   <div class="kpi"><b>{items}</b><span class="muted">objekata u biblioteci</span></div>
-   <div class="kpi"><b>{uptime}</b><span class="muted">sekundi rada</span></div>
-   <div class="kpi"><b>{roots}</b><span class="muted">mapa</span></div>
-   <div class="kpi"><b>{subscriptions}</b><span class="muted">TV-a pretplaceno</span></div>
- </div>
- <div class="card">
-   <b>Na TV-u:</b> otvori izvor <code>{friendly}</code> u DLNA/UPnP izborniku.<br>
-   <b>U VLC-u:</b> Local Network → Universal Plug'n'Play.<br>
-   <b>API:</b> <a href="/healthz">/healthz</a> ·
-   <a href="/api/status">/api/status</a> ·
-   <a href="/rootDesc.xml">/rootDesc.xml</a>
- </div>
- <div class="card muted">
-   Web sučelje (dashboard, biblioteka, profili) dolazi u Fazi 4.
- </div>
-</div></body></html>"#,
-        app = rustiio_core::APP_NAME,
-        version = rustiio_core::VERSION,
-        friendly = escape(&state.identity.friendly_name),
-        items = catalog.len(),
-        uptime = state.uptime_secs(),
-        roots = state.config.library.roots.len(),
-        subscriptions = state.gena.len(),
-    );
-    Html(page).into_response()
 }
 
 // ------------------------------------------------------------------- pomocno

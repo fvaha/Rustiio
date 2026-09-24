@@ -74,6 +74,7 @@ pub async fn execute(config_path: PathBuf, args: RunArgs) -> anyhow::Result<()> 
     )
     .with_profiles_dir(profiles_dir)
     .with_store(open_store(&config_path)?)
+    .with_config_path(config_path.clone())
     // Poster kes ide uz config (`<config_dir>/art`), a kljuc (ako ga ima) iz okoline.
     .with_enricher(rustiio_library::metadata::Enricher::from_env(
         config_path.parent().unwrap_or_else(|| std::path::Path::new(".")).join("art"),
@@ -175,6 +176,9 @@ pub async fn execute(config_path: PathBuf, args: RunArgs) -> anyhow::Result<()> 
         warn!("SSDP je iskljucen — TV-i nas nece naci sami");
         None
     };
+
+    // Dashboard u web sučelju čita CPU/RAM/diskove iz ovog uzorkivača.
+    rustiio_server::api::stats::start_sampler();
 
     print_banner(&identity.friendly_name, &base_url, &config_path);
 

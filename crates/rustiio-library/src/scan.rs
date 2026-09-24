@@ -71,6 +71,11 @@ impl Catalog {
             .unwrap_or_default()
     }
 
+    /// Svi objekti (za izvoz cijele biblioteke u CSV/JSON).
+    pub fn nodes(&self) -> impl Iterator<Item = &Node> {
+        self.map.values()
+    }
+
     pub fn len(&self) -> usize {
         self.map.len()
     }

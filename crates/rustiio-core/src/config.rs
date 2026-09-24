@@ -15,6 +15,27 @@ pub struct Config {
     pub transcode: TranscodeSection,
     pub profiles: ProfilesSection,
     pub network: NetworkSection,
+    /// Web sucelje (jezik sucelja). Zadano `auto` — prati jezik browsera.
+    pub ui: UiSection,
+}
+
+/// Postavke web sucelja.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UiSection {
+    /// `auto` (prati browser), `hr` ili `en`.
+    #[serde(default = "default_language")]
+    pub language: String,
+}
+
+impl Default for UiSection {
+    fn default() -> Self {
+        Self { language: default_language() }
+    }
+}
+
+/// Zadani jezik sucelja: prati browser (`navigator.language`).
+pub fn default_language() -> String {
+    "auto".to_string()
 }
 
 impl Config {

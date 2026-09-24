@@ -189,14 +189,31 @@ Zamke nađene živim testiranjem:
 
 ### Faza 4 — Web UI + API (~2 tjedna)
 
-- [ ] REST + WebSocket API (`/api/status`, `/api/scan`, `/api/devices`, `/api/profiles`, `/api/streams`, `/api/settings`, `/api/logs`)
-- [ ] Svelte 5 + Vite UI, embeddan u binarni fajl (`rust-embed`), serviran na `/`
-- [ ] Dashboard: aktivni streamovi (ko/što/bitrate/transcode ili direct), CPU/GPU, biblioteka, diskovi — **bento grid, draggable/resizable kartice** (kao BSM), tamna tema, mobilni layout
-- [ ] Library browser: posteri, filteri (žanr/godina/glumac), pretraga, "pusti na TV" (renderer push)
-- [ ] Device manager: lista uređaja, što je tražio, dodjela profila, editor profila s testom
-- [ ] Settings: mape, port, titlovi, transcode, korisnici
-- [ ] Live logs (tail preko WS), health
-- [ ] i18n od početka (hr/en)
+- [x] REST + WebSocket API (`/api/status`, `/api/stats`, `/api/logs`, `/ws/logs`, `/api/settings`,
+      `/api/restart`, `/api/browse`, `/api/items/{id}`, `/api/export`, `/api/scan`, `/api/devices`,
+      `/api/profiles`, `/api/streams`, `/api/posters`) — sve osim niže navedenog
+- [x] Svelte 5 + Vite UI, embeddan u binarni fajl (`rust-embed`), serviran na `/` (SPA fallback)
+- [x] Dashboard: aktivni streamovi (mode/encoder/trajanje), CPU (uzorak + sparkline), RAM, GPU,
+      knjižnica, diskovi, posteri, zapisnik — **bento grid, kartice koje se povlače, mijenjaju
+      širinu (i tipkovnicom) i skupljaju**, tamna tema, mobilni layout (`<=380px` provjereno)
+- [x] Library browser: posteri, mape, pretraga, filtar vrste, detalji objekta, izvoz CSV/JSON
+- [x] Device manager: lista uređaja (IP, User-Agent, profil, zahtjevi, DLNA zaglavlja) +
+      **spremanje profila iz stvarnog uređaja** (`POST /api/profile/{key}`, bez restarta)
+- [x] Settings: server, mreža, transcode, mape, jezik + JSON prikaz; pošteno kaže koja polja
+      traže restart i nudi restart iz sučelja (`POST /api/restart`)
+- [x] Live logs (WS tail, filtri, pauza, preuzimanje), health
+- [ ] "pusti na TV" (renderer push) — dolazi u Fazi 6 (gumb je zasad vidljivo onemogućen)
+- [ ] filteri po žanru/godini/glumcu (traži metapodatke u bazi — sad samo pretraga naslova)
+- [ ] korisnici/prijava u sučelju (Faza 7 hardening)
+- [x] i18n od početka (hr/en, `config.ui.language` = `auto`/`hr`/`en`)
+
+**Dokazano na živoj instanci (macOS, :8210):** `/` servira Svelte sučelje iz binarnog fajla;
+dashboard u pravom (headless) Chromiumu čita `15% CPU · 10 jezgre`, `53% RAM · 16.8 GB / 32.0 GB`,
+3 diska s trakama, 12 log linija preko WS-a; knjižnica prikazuje mape i postere; na 380 px kartica
+je 356 px i nema vodoravnog preljeva; postavke učitavaju config (17 polja, "Spremi" onemogućen dok
+nema promjena). **Transcode u realnom vremenu:** `/tr/3` s profilom `starac-tv` → `200 video/mp2t`,
+log `transcode object_id=3 profile=starac-tv (video → h264_videotoolbox 2000 kb/s, hw Apple VideoToolbox)`,
+a kartica na dashboardu pokazuje `mpegts · Apple VideoToolbox · h264_videotoolbox · 0:12 · Transcode`.
 
 **Acceptance:** sve gore se radi iz browsera i s telefona; UI se ne raspada na 380 px; dashboard pokazuje transcode stream u realnom vremenu.
 

@@ -41,6 +41,8 @@ pub struct AppState {
     pub store: Arc<Store>,
     /// Dohvat postera (TMDB / Wikipedia / TVmaze / Cover Art) — jedan agent i jedan kes.
     pub enricher: Arc<Enricher>,
+    /// Putanja `config.toml` (web sučelje ga čita i piše).
+    pub config_path: Arc<PathBuf>,
     /// Mapa s korisnickim profilima.
     profiles_dir: Arc<PathBuf>,
     started: Instant,
@@ -50,6 +52,12 @@ impl AppState {
     /// Isti kao [`AppState::new`], ali s izricitom mapom profila.
     pub fn with_profiles_dir(mut self, dir: PathBuf) -> Self {
         self.profiles_dir = Arc::new(dir);
+        self
+    }
+
+    /// Putanja configa — treba je web sučelje (`/api/settings`).
+    pub fn with_config_path(mut self, path: PathBuf) -> Self {
+        self.config_path = Arc::new(path);
         self
     }
 
@@ -126,6 +134,7 @@ impl AppState {
             sessions,
             store,
             enricher: Arc::new(enricher),
+            config_path: Arc::new(PathBuf::new()),
             profiles_dir: Arc::new(PathBuf::from("profiles")),
             started: Instant::now(),
         }
