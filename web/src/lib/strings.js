@@ -89,6 +89,9 @@ export const hr = {
     headers: 'DLNA zaglavlja',
     profiles_title: 'Profili uređaja',
     generic: 'općenito',
+    dlna_client: 'DLNA klijent',
+    saved: 'Profil spremljen',
+    rules_hint: 'Koliko se pravila profila poklapa s prijavljenim uređajima',
   },
   settings: {
     title: 'Postavke',
@@ -355,6 +358,9 @@ export const en = {
     headers: 'DLNA headers',
     profiles_title: 'Device profiles',
     generic: 'generic',
+    dlna_client: 'DLNA client',
+    saved: 'Profile saved',
+    rules_hint: 'How many profile rules match connected devices',
   },
   settings: {
     title: 'Settings',
