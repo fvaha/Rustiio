@@ -1,219 +1,233 @@
 <script>
-  // Postavke: uređivanje configa iz browsera. Sve što traži restart se jasno kaže.
-  import { t, i18n, setLocale, languages } from '../lib/i18n.svelte.js'
+  // Postavke: **sva** polja configa, po sekcijama, s objašnjenjem i spremljenim stanjem.
+  // Polja su opisana u lib/settings-schema.js — novo polje u configu se pojavi samo.
+  import { onMount } from 'svelte'
+  import { i18n } from '../lib/i18n.svelte.js'
   import { get, put, post } from '../lib/api.js'
   import { toast, refreshStatus } from '../lib/store.svelte.js'
+  import { SECTIONS, fieldsOf, getPath, setPath, metaOf } from '../lib/settings-schema.js'
+  import Field from '../components/Field.svelte'
 
   let config = $state(null)
-  let original = $state('')
+  let original = $state(null)
   let path = $state('')
-  let restartFields = $state([])
+  let pendingRestart = $state([])
   let saving = $state(false)
+  let problem = $state('')
   let rawOpen = $state(false)
-  let raw = $state('')
+  let rawText = $state('')
+  let rawError = $state('')
 
-  const dirty = $derived(config ? JSON.stringify(config) !== original : false)
+  const hr = $derived(i18n.lang !== 'en')
+  const text = (item) => (item && typeof item === 'object' ? (item[hr ? 'hr' : 'en'] ?? item.hr ?? '') : (item ?? ''))
+
+  /// Sva polja koja se razlikuju od spremljenog stanja (ista logika kao na serveru).
+  const changed = $derived.by(() => diff(original, config))
+  const restartFields = $derived(changed.filter((item) => !item.startsWith('ui.')))
+
+  function diff(oldValue, newValue, prefix = '', out = []) {
+    if (oldValue === newValue) return out
+    const bothObjects = oldValue && newValue && typeof oldValue === 'object' && typeof newValue === 'object'
+    if (!bothObjects) {
+      if (prefix) out.push(prefix)
+      return out
+    }
+    if (Array.isArray(oldValue) !== Array.isArray(newValue)) {
+      out.push(prefix)
+      return out
+    }
+    if (Array.isArray(oldValue)) {
+      if (oldValue.length !== newValue.length) {
+        out.push(prefix)
+        return out
+      }
+      oldValue.forEach((item, index) => diff(item, newValue[index], `${prefix}[${index}]`, out))
+      return out
+    }
+    const keys = new Set([...Object.keys(oldValue), ...Object.keys(newValue)])
+    for (const key of keys) {
+      diff(oldValue[key], newValue[key], prefix ? `${prefix}.${key}` : key, out)
+    }
+    return out
+  }
 
   async function load() {
     try {
       const data = await get('/api/settings')
       config = data.config
-      original = JSON.stringify(data.config)
+      original = JSON.parse(JSON.stringify(data.config))
       path = data.putanja
-      restartFields = data.restart_prefiksi ?? []
-      raw = JSON.stringify(data.config, null, 2)
+      pendingRestart = data.ceka_restart ?? []
+      rawText = JSON.stringify(data.config, null, 2)
+      problem = ''
     } catch (error) {
-      toast('err', `${t('common.error')}: ${error.message}`)
+      problem = `${hr ? 'Ne mogu pročitati postavke' : 'Cannot read settings'}: ${error.message}`
+      toast('err', problem)
     }
   }
 
+  onMount(load)
+
+  function change(fieldPath, value) {
+    config = setPath(config, fieldPath, value)
+    rawText = JSON.stringify(config, null, 2)
+  }
+
+  function reset() {
+    config = JSON.parse(JSON.stringify(original))
+    rawText = JSON.stringify(config, null, 2)
+    problem = ''
+  }
+
   async function save() {
-    if (!config) return
     saving = true
+    problem = ''
     try {
       const result = await put('/api/settings', config)
-      original = JSON.stringify(config)
-      await refreshStatus()
-      toast('ok', t('common.saved'))
+      original = JSON.parse(JSON.stringify(config))
+      pendingRestart = result?.traze_restart ?? []
+      const count = result?.promijenjena?.length ?? 0
+      toast('ok', hr ? `Spremljeno (${count} ${count === 1 ? 'polje' : 'polja'})` : `Saved (${count} fields)`)
       if (result?.restart_potreban) {
-        toast('warn', `${t('settings.restart_needed')}: ${(result.promijenjena ?? []).join(', ')}`, 10000)
+        toast('warn', hr ? 'Neka polja vrijede tek nakon restarta servisa.' : 'Some fields apply only after a service restart.', 9000)
       }
+      rawText = JSON.stringify(config, null, 2)
+      await refreshStatus()
     } catch (error) {
-      toast('err', `${t('common.error')}: ${error.message}`)
+      problem = error.message
+      toast('err', `${hr ? 'Nije spremljeno' : 'Not saved'}: ${error.message}`, 12000)
     } finally {
       saving = false
     }
   }
 
-  function applyRaw() {
-    try {
-      config = JSON.parse(raw)
-      toast('ok', t('common.saved'))
-    } catch (error) {
-      toast('err', `JSON: ${error.message}`)
-    }
-  }
-
-  async function restart() {
-    if (!confirm(t('settings.restart_confirm'))) return
+  async function restartService() {
+    if (!confirm(hr ? 'Restartati servis sada? Strimovi će se prekinuti.' : 'Restart the service now? Streams will drop.')) return
     try {
       await post('/api/restart')
-      toast('warn', t('settings.restarting'), 12000)
-      setTimeout(() => location.reload(), 7000)
+      toast('warn', hr ? 'Servis se diže… stranica će se osvježiti.' : 'Service is coming back… page will reload.', 8000)
+      setTimeout(() => location.reload(), 6000)
     } catch (error) {
-      toast('err', `${t('common.error')}: ${error.message}`)
+      toast('err', error.message)
     }
   }
 
-  function addRoot() {
-    config.library.roots = [...(config.library.roots ?? []), { label: '', path: '/', kind: 'video' }]
+  function applyRaw() {
+    try {
+      const parsed = JSON.parse(rawText)
+      config = parsed
+      rawError = ''
+      toast('ok', hr ? 'Config pročitan iz JSON-a — provjeri i spremi.' : 'Config parsed from JSON — review and save.')
+    } catch (error) {
+      rawError = error.message
+      toast('err', `${hr ? 'JSON nije ispravan' : 'Invalid JSON'}: ${error.message}`)
+    }
   }
 
-  function removeRoot(index) {
-    config.library.roots = config.library.roots.filter((_, position) => position !== index)
-  }
-
-  $effect(() => {
-    load()
-  })
+  const counts = $derived(
+    config ? Object.fromEntries(SECTIONS.map((section) => [section.key, fieldsOf(section.key, config).length])) : {},
+  )
 </script>
 
-{#if !config}
-  <div class="empty">{t('common.loading')}</div>
-{:else}
-  <div class="lib-bar">
-    <span class="pill mono hide-sm">{path}</span>
-    <span class="spacer"></span>
-    {#if dirty}<span class="tag warn">{t('settings.restart_needed')}</span>{/if}
-    <button class="btn primary" onclick={save} disabled={saving || !dirty}>{saving ? '…' : t('common.save')}</button>
-    <button class="btn ghost" onclick={load} disabled={!dirty}>{t('common.cancel')}</button>
-    <button class="btn danger" onclick={restart}>{t('settings.restart_now')}</button>
-  </div>
+<div class="settings">
+  <nav class="settings-nav" aria-label={hr ? 'Sekcije postavki' : 'Settings sections'}>
+    {#each SECTIONS as section}
+      <a href="#{section.key}">
+        <span>{text(section.title)}</span>
+        <span class="n">{counts[section.key] ?? 0}</span>
+      </a>
+    {/each}
+    <a href="#napredno"><span>{hr ? 'Napredno' : 'Advanced'}</span><span class="n">JSON</span></a>
+  </nav>
 
-  <div class="bento">
-    <div class="card" style="--span: 6">
-      <div class="card-head"><span class="card-title">{t('settings.server')}</span></div>
-      <div class="card-body">
-        <div class="form">
-          <label for="s-name">{t('settings.friendly_name')}</label>
-          <input id="s-name" class="field" bind:value={config.server.friendly_name} />
-
-          <label for="s-bind">{t('settings.bind')}</label>
-          <input id="s-bind" class="field" bind:value={config.server.bind} />
-
-          <label for="s-port">{t('settings.port')}</label>
-          <input id="s-port" class="field" type="number" bind:value={config.server.http_port} />
-
-          <label for="s-ip">{t('settings.advertise_ip')}</label>
-          <input id="s-ip" class="field" bind:value={config.server.advertise_ip} />
-
-          <label for="s-udn">{t('settings.udn')}</label>
-          <input id="s-udn" class="field mono" bind:value={config.server.udn} />
-
-          <label for="s-log">log_level</label>
-          <select id="s-log" class="field" bind:value={config.server.log_level}>
-            {#each ['error', 'warn', 'info', 'debug'], level}
-              <option value={level}>{level}</option>
-            {/each}
-          </select>
-
-          <label for="s-ui">{t('common.language')}</label>
-          <select
-            id="s-ui"
-            class="field"
-            bind:value={config.ui.language}
-            onchange={() => setLocale(config.ui.language)}
-          >
-            {#each languages as language}
-              <option value={language.id}>{language.label()}</option>
-            {/each}
-          </select>
+  <div>
+    {#if problem}
+      <div class="panel" style="border-color: rgba(251, 113, 133, 0.5); margin-bottom: 16px">
+        <div class="panel-body" style="padding-top: 14px">
+          <strong style="color: var(--err)">{hr ? 'Greška' : 'Error'}:</strong> {problem}
         </div>
       </div>
-    </div>
+    {/if}
 
-    <div class="card" style="--span: 6">
-      <div class="card-head">
-        <span class="card-title">{t('settings.network')} · {t('settings.transcode')}</span>
-      </div>
-      <div class="card-body">
-        <div class="form">
-          <label for="n-ip">{t('settings.ip_family')}</label>
-          <select id="n-ip" class="field" bind:value={config.network.ip_family}>
-            {#each ['ipv4', 'ipv6', 'any'], family}<option value={family}>{family}</option>{/each}
-          </select>
-
-          <label for="n-timeout">timeout_connect</label>
-          <input id="n-timeout" class="field" type="number" bind:value={config.network.timeout_connect} />
-
-          <label for="t-on">{t('settings.enabled')}</label>
-          <input id="t-on" type="checkbox" bind:checked={config.transcode.enabled} />
-
-          <label for="t-hw">hw_accel</label>
-          <input id="t-hw" class="field" bind:value={config.transcode.hw_accel} />
-
-          <label for="t-max">{t('settings.max_concurrent')}</label>
-          <input id="t-max" class="field" type="number" bind:value={config.transcode.max_concurrent} />
-
-          <label for="t-ff">{t('settings.ffmpeg')}</label>
-          <input id="t-ff" class="field mono" bind:value={config.transcode.ffmpeg_path} />
-
-          <label for="t-fp">{t('settings.ffprobe')}</label>
-          <input id="t-fp" class="field mono" bind:value={config.transcode.ffprobe_path} />
+    {#if pendingRestart.length}
+      <div class="panel" style="border-color: rgba(251, 191, 36, 0.45); margin-bottom: 16px">
+        <div class="panel-body" style="padding-top: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+          <span class="badge warn"><span class="dot"></span>{hr ? 'čeka restart' : 'restart pending'}</span>
+          <span class="grow small dim">
+            {hr ? 'Ova polja su spremljena, ali vrijede tek kad se servis digne:' : 'These fields are saved but take effect only after a restart:'}
+            <span class="mono">{pendingRestart.join(', ')}</span>
+          </span>
+          <button class="btn primary" onclick={restartService}>{hr ? 'Restartaj servis' : 'Restart service'}</button>
         </div>
       </div>
-    </div>
+    {/if}
 
-    <div class="card" style="--span: 12">
-      <div class="card-head">
-        <span class="card-title">{t('settings.roots')}</span>
-        <span class="card-actions">
-          <button class="btn" onclick={addRoot}>+ {t('settings.add_root')}</button>
-        </span>
-      </div>
-      <div class="card-body">
-        {#each config.library.roots as root, index}
-          <div class="row">
-            <input class="field" style="flex: 0 1 150px" placeholder={t('settings.label')} bind:value={root.label} />
-            <input class="field" style="flex: 1 1 320px" placeholder={t('settings.path')} bind:value={root.path} />
-            <select class="field" bind:value={root.kind}>
-              {#each ['video', 'audio', 'image'], kind}<option value={kind}>{kind}</option>{/each}
-            </select>
-            <button class="btn danger" onclick={() => removeRoot(index)}>✕</button>
+    {#if !config}
+      <div class="panel"><div class="panel-body">
+        <div class="skeleton" style="height: 88px"></div>
+        <div class="skeleton" style="height: 188px; margin-top: 12px"></div>
+      </div></div>
+    {:else}
+      {#each SECTIONS as section}
+        <section class="panel" id={section.key}>
+          <div class="panel-head">
+            <h2><span aria-hidden="true">{section.icon}</span> {text(section.title)}</h2>
+            <p>{text(section.desc)}</p>
           </div>
-        {/each}
-        <div class="form" style="margin-top: 14px">
-          <label for="l-depth">max_depth</label>
-          <input id="l-depth" class="field" type="number" bind:value={config.library.max_depth} />
-          <label for="l-recent">recent_limit</label>
-          <input id="l-recent" class="field" type="number" bind:value={config.library.recent_limit} />
-          <label for="l-views">views</label>
-          <input id="l-views" type="checkbox" bind:checked={config.library.views} />
-        </div>
-      </div>
-    </div>
-
-    <div class="card" style="--span: 12">
-      <div class="card-head">
-        <span class="card-title">JSON</span>
-        <span class="card-actions">
-          <button class="btn ghost" onclick={() => (rawOpen = !rawOpen)}>{rawOpen ? '▾' : '▸'}</button>
-        </span>
-      </div>
-      {#if rawOpen}
-        <div class="card-body">
-          <textarea
-            class="field mono"
-            style="width: 100%; min-height: 260px"
-            bind:value={raw}
-            spellcheck="false"
-          ></textarea>
-          <div style="margin-top: 8px; display: flex; gap: 8px">
-            <button class="btn" onclick={applyRaw}>{t('common.save')}</button>
-            <button class="btn ghost" onclick={() => (raw = JSON.stringify(config, null, 2))}>{t('common.reset')}</button>
+          <div class="panel-body">
+            {#each fieldsOf(section.key, config) as field (field.path)}
+              <Field
+                path={field.path}
+                meta={metaOf(field.path, field.value)}
+                value={field.value}
+                changed={changed.some((item) => item === field.path || item.startsWith(`${field.path}[`))}
+                onchange={(next) => change(field.path, next)}
+              />
+            {/each}
           </div>
+        </section>
+      {/each}
+
+      <section class="panel" id="napredno">
+        <div class="panel-head">
+          <h2><span aria-hidden="true">⌘</span> {hr ? 'Napredno' : 'Advanced'}</h2>
+          <p>
+            {hr ? 'Cijeli config kao JSON. Koristi kad nešto nije u obrascu — i za kopiranje postavki na drugi server.' : 'The whole config as JSON. Use it for anything not in the form — and to copy settings to another server.'}
+          </p>
         </div>
-      {/if}
-    </div>
+        <div class="panel-body">
+          <div class="row tight">
+            <span class="grow small faint mono">{path}</span>
+            <button class="btn sm" onclick={() => (rawOpen = !rawOpen)}>{rawOpen ? (hr ? 'Sakrij' : 'Hide') : (hr ? 'Prikaži' : 'Show')}</button>
+            <button class="btn sm" onclick={applyRaw} disabled={!rawOpen}>{hr ? 'Primijeni' : 'Apply'}</button>
+          </div>
+          {#if rawOpen}
+            <textarea class="textarea mono" rows="18" bind:value={rawText} spellcheck="false"></textarea>
+            {#if rawError}<div class="tiny" style="color: var(--err); margin-top: 6px">{rawError}</div>{/if}
+          {/if}
+        </div>
+      </section>
+
+      <div class="savebar">
+        <span class="badge" class:info={changed.length > 0} class:ok={changed.length === 0}>
+          {changed.length > 0
+            ? `${changed.length} ${hr ? (changed.length === 1 ? 'promjena' : 'promjena') : 'changed'}`
+            : hr ? 'sve spremljeno' : 'all saved'}
+        </span>
+        {#if changed.length > 0}
+          <span class="small faint mono hide-sm" style="max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">
+            {changed.join(', ')}
+          </span>
+        {/if}
+        <span class="spacer"></span>
+        {#if restartFields.length > 0 && changed.length === 0}
+          <span class="badge warn">{hr ? 'restart čeka' : 'restart pending'}</span>
+        {/if}
+        <button class="btn" onclick={reset} disabled={changed.length === 0}>{hr ? 'Vrati' : 'Revert'}</button>
+        <button class="btn primary" onclick={save} disabled={saving || changed.length === 0}>
+          {saving ? (hr ? 'Spremam…' : 'Saving…') : (hr ? 'Spremi postavke' : 'Save settings')}
+        </button>
+      </div>
+    {/if}
   </div>
-{/if}
+</div>

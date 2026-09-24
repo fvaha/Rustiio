@@ -14,21 +14,29 @@ use serde_json::{Value, json};
 
 use crate::state::AppState;
 
-/// Prefiksi polja koja se primjenjuju tek nakon restarta servisa.
-const RESTART_PREFIXES: [&str; 3] = ["server.", "network.", "ssdp."];
+/// Polja koja se primjenjuju **bez** restarta. Sve ostalo (config se u radu ne
+/// mijenja — mape, transcode, port, UDN, obitelj IP-a drže se u `AppState`)
+/// vrijedi tek kad se servis digne.
+const HOT_PREFIXES: [&str; 1] = ["ui."];
 
 /// Rute: čitanje, pisanje i restart.
 pub fn routes() -> Router<AppState> {
     Router::new().route("/api/settings", get(api_get).put(api_put)).route("/api/restart", post(api_restart))
 }
 
-/// `GET /api/settings` — trenutni config, putanja i koja polja traže restart.
+/// `GET /api/settings` — config kakav je **na disku** (to sučelje uređuje), plus
+/// popis polja koja se razlikuju od pokrenutog procesa (`ceka_restart`).
 async fn api_get(State(state): State<AppState>) -> impl IntoResponse {
-    let config = serde_json::to_value(state.config.as_ref()).unwrap_or(Value::Null);
+    // Datoteka je izvor istine: netko je mogao spremiti iz sučelja ili ručno, a
+    // proces još radi po starom. Razlika se pošteno prijavi, ne prešućuje.
+    let file = Config::load(&state.config_path).unwrap_or_else(|_| state.config.as_ref().clone());
+    let pending = diff_paths(state.config.as_ref(), &file);
+    let config = serde_json::to_value(&file).unwrap_or(Value::Null);
     axum::Json(json!({
         "config": config,
         "putanja": state.config_path.to_string_lossy(),
-        "restart_prefiksi": RESTART_PREFIXES,
+        "ceka_restart": pending,
+        "bez_restarta": HOT_PREFIXES,
     }))
 }
 
@@ -50,6 +58,7 @@ async fn api_put(State(state): State<AppState>, body: String) -> impl IntoRespon
     }
 
     let restart = changed.iter().any(|path| needs_restart(path));
+    let traze_restart: Vec<String> = changed.iter().filter(|path| needs_restart(path)).cloned().collect();
     crate::api::logs::note(
         "INFO",
         "rustiio_server::api::settings",
@@ -58,6 +67,7 @@ async fn api_put(State(state): State<AppState>, body: String) -> impl IntoRespon
     axum::Json(json!({
         "spremljeno": true,
         "promijenjena": changed,
+        "traze_restart": traze_restart,
         "restart_potreban": restart,
         "putanja": state.config_path.to_string_lossy(),
     }))
@@ -130,7 +140,7 @@ fn walk(prefix: &str, old: &Value, new: &Value, out: &mut Vec<String>) {
 }
 
 fn needs_restart(path: &str) -> bool {
-    RESTART_PREFIXES.iter().any(|prefix| path.starts_with(prefix))
+    !HOT_PREFIXES.iter().any(|prefix| path.starts_with(prefix))
 }
 
 fn fail(status: StatusCode, message: impl Into<String>) -> axum::response::Response {
@@ -201,6 +211,32 @@ mod tests {
         let changed = diff_paths(&config(), &new);
         assert_eq!(changed, vec!["ui.language"]);
         assert!(!needs_restart(&changed[0]));
+    }
+
+    #[test]
+    fn library_change_needs_restart_because_config_is_frozen_at_startup() {
+        let mut new = config();
+        new.library.posters = !new.library.posters;
+        let changed = diff_paths(&config(), &new);
+        assert_eq!(changed, vec!["library.posters"]);
+        assert!(needs_restart(&changed[0]));
+    }
+
+    #[test]
+    fn disk_config_is_the_source_of_truth_for_get() {
+        // GET mora pokazati ono što je na disku, a `ceka_restart` razliku prema procesu.
+        let dir = std::env::temp_dir().join(format!("rustiio-settings-get-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        let mut file = config();
+        file.server.log_level = "debug".into();
+        file.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+        assert_eq!(loaded.server.log_level, "debug");
+        assert_eq!(diff_paths(&config(), &loaded), vec!["server.log_level"]);
+        assert!(needs_restart("server.log_level"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

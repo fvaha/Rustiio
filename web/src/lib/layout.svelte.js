@@ -8,12 +8,14 @@ const MIN_SPAN = 3
 const MAX_SPAN = 12
 
 export const DEFAULT_CARDS = [
-  { id: 'streams', span: 5 },
-  { id: 'system', span: 4 },
-  { id: 'library', span: 3 },
-  { id: 'disks', span: 4 },
+  { id: 'system', span: 8 },
+  { id: 'streams', span: 4 },
+  { id: 'library', span: 4 },
   { id: 'posters', span: 4 },
-  { id: 'logs', span: 4 },
+  { id: 'disks', span: 4 },
+  { id: 'devices', span: 6 },
+  { id: 'transcode', span: 6 },
+  { id: 'logs', span: 12 },
 ]
 
 function load() {
@@ -21,11 +23,16 @@ function load() {
     const raw = localStorage.getItem(KEY)
     if (!raw) return DEFAULT_CARDS.map((card) => ({ ...card, collapsed: false }))
     const saved = JSON.parse(raw)
-    // Nepoznate kartice se dodaju na kraj, poznate zadržavaju spremljeni redoslijed.
-    const known = new Map(saved.map((card) => [card.id, card]))
-    const merged = DEFAULT_CARDS.map((card) => ({ ...card, ...known.get(card.id), collapsed: !!known.get(card.id)?.collapsed }))
-    const extra = saved.filter((card) => !DEFAULT_CARDS.some((knownCard) => knownCard.id === card.id))
-    return [...merged, ...extra]
+    // Spremljeni redoslijed se čuva; nove kartice (iz novije verzije) idu na kraj.
+    const defaults = new Map(DEFAULT_CARDS.map((card) => [card.id, card]))
+    const ordered = []
+    for (const card of saved) {
+      const base = defaults.get(card.id)
+      if (base) defaults.delete(card.id)
+      ordered.push({ ...(base ?? { span: 4 }), ...card, collapsed: !!card.collapsed })
+    }
+    for (const rest of defaults.values()) ordered.push({ ...rest, collapsed: false })
+    return ordered.filter((card) => DEFAULT_CARDS.some((known) => known.id === card.id))
   } catch {
     return DEFAULT_CARDS.map((card) => ({ ...card, collapsed: false }))
   }
