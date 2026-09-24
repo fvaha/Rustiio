@@ -41,6 +41,9 @@ fn main() {
                 .title("Rustiio")
                 .inner_size(1280.0, 840.0)
                 .min_inner_size(900.0, 600.0)
+                // Tamni naslovni pojas da se prozor stapa sa sučeljem, i otvori se na sredini.
+                .theme(Some(tauri::Theme::Dark))
+                .center()
                 .build()?;
             Ok(())
         })

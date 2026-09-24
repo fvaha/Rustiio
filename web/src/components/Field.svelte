@@ -104,6 +104,10 @@
   const pickStart = $derived(
     pickFor >= 0 && Array.isArray(value) ? (value[pickFor]?.path ?? '') : '',
   )
+
+  /// Server traži apsolutnu putanju — pokaži to odmah, ne tek pri spremanju.
+  const isAbsolute = (candidate) =>
+    String(candidate ?? '').startsWith('/') || /^[A-Za-z]:[/\\]/.test(String(candidate ?? ''))
 </script>
 
 <div class="field" class:changed data-field={path}>
@@ -185,7 +189,14 @@
         {#each Array.isArray(value) ? value : [] as root, index}
           <div class="root-row">
             <input class="input" placeholder={lang === 'en' ? 'label' : 'naziv'} value={root.label ?? ''} onchange={(event) => setRoot(index, 'label', event.currentTarget.value)} />
-            <input class="input mono" placeholder="/putanja/do/mape" value={root.path ?? ''} onchange={(event) => setRoot(index, 'path', event.currentTarget.value)} />
+            <input
+              class="input mono"
+              class:bad={root.path && !isAbsolute(root.path)}
+              title={root.path && !isAbsolute(root.path) ? (lang === 'en' ? 'The path must start with "/"' : 'Putanja mora počinjati s „/"') : ''}
+              placeholder="/putanja/do/mape"
+              value={root.path ?? ''}
+              onchange={(event) => setRoot(index, 'path', event.currentTarget.value)}
+            />
             <button
               class="btn"
               type="button"

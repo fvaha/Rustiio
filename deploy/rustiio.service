@@ -16,7 +16,9 @@ EnvironmentFile=-/etc/rustiio/env
 ExecStart=/usr/local/bin/rustiio run
 # Health-check na razini systemd-a: ako /healthz ne vrati 200, restartaj.
 ExecStartPost=/bin/sh -c 'sleep 2; /usr/local/bin/rustiio health --quiet'
-Restart=on-failure
+# `always`, ne `on-failure`: restart iz sučelja (`POST /api/restart`) izlazi s 0,
+# pa bi uz `on-failure` server ostao ugašen.
+Restart=always
 RestartSec=3
 
 # Server ne piše ništa osim svog state direktorija; medije samo čita.

@@ -2,7 +2,7 @@
   // Pregled: računalo, strimovi, knjižnica, posteri, diskovi, uređaji, prekodiranje, zapisnik.
   // Kartice se povlače, mijenjaju širinu i skupljaju (lib/layout.svelte.js).
   import { i18n } from '../lib/i18n.svelte.js'
-  import { store, refreshPosters, saveSettings, restartServer, toast } from '../lib/store.svelte.js'
+  import { store, refreshPosters, saveSettings, toast } from '../lib/store.svelte.js'
   import { get } from '../lib/api.js'
   import { cardOf, resetLayout } from '../lib/layout.svelte.js'
   import { bytes, percent, uptime, bitrate, barClass, ago, duration } from '../lib/format.js'
@@ -23,7 +23,9 @@
     picking = false
     saving = path
     try {
-      const config = await get('/api/settings')
+      // `GET /api/settings` vraća omotnicu (`config`, `ceka_restart`, `putanja`) —
+      // na server se šalje samo `config`, inače validacija padne na `udn`.
+      const { config } = await get('/api/settings')
       const roots = Array.isArray(config?.library?.roots) ? config.library.roots : []
       const name = String(path).split(/[/\\]/).filter(Boolean).pop() ?? path
       if (roots.some((root) => root.path === path)) {
@@ -32,7 +34,11 @@
       }
       config.library.roots = [...roots, { label: name, path, kind: 'video' }]
       const result = await saveSettings(config)
-      if (result?.restart_potreban) await restartServer()
+      // Ne restartaj sam: u desktop aplikaciji bi to ugasilo i prozor, a na
+      // serveru ovisi o tome kako je usluga postavljena. Reci korisniku što treba.
+      if (result?.restart_potreban) {
+        toast('warn', hr ? 'Mape spremljene. Za novu mapu treba ponovno pokretanje: u aplikaciji zatvori i otvori Rustiio, na serveru restartaj uslugu.' : 'Folders saved. A restart is needed: reopen the app, or restart the service on the server.', 12000)
+      }
     } catch (error) {
       toast('err', String(error?.message ?? error))
     } finally {
@@ -43,11 +49,13 @@
   /// Ukloni mapu koje više nema na disku.
   async function dropFolder(path) {
     try {
-      const config = await get('/api/settings')
+      const { config } = await get('/api/settings')
       const roots = Array.isArray(config?.library?.roots) ? config.library.roots : []
       config.library.roots = roots.filter((root) => root.path !== path)
       const result = await saveSettings(config)
-      if (result?.restart_potreban) await restartServer()
+      if (result?.restart_potreban) {
+        toast('warn', hr ? 'Mape spremljene. Za promjenu treba ponovno pokretanje.' : 'Folders saved. A restart is needed.', 12000)
+      }
     } catch (error) {
       toast('err', String(error?.message ?? error))
     }
@@ -200,7 +208,7 @@
       <button class="btn primary sm" type="button" disabled={!!saving} onclick={() => (picking = true)}>
         + {hr ? 'Dodaj mapu s videom' : 'Add video folder'}
       </button>
-      {#if saving}<span class="grow small dim">{hr ? 'spremam i restartam…' : 'saving and restarting…'}</span>{/if}
+      {#if saving}<span class="grow small dim">{hr ? 'spremam…' : 'saving…'}</span>{/if}
     </div>
 
     <FolderPicker open={picking} {lang} onpick={addFolder} onclose={() => (picking = false)} />

@@ -100,7 +100,10 @@ fn validate(config: &Config) -> Result<(), String> {
     }
     for root in &config.library.roots {
         if !root.path.is_absolute() {
-            return Err(format!("mapa mora biti apsolutna putanja: {}", root.path.display()));
+            return Err(format!(
+                "mapa mora biti apsolutna putanja (počinje s \"/\"): {} — otvori „Odaberi\" i izaberi mapu iz popisa",
+                root.path.display()
+            ));
         }
     }
     Ok(())

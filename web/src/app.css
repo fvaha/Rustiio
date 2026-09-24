@@ -620,6 +620,9 @@ table.tbl td.n, table.tbl th.n { text-align: right; font-variant-numeric: tabula
 
 .picker-icon { flex: none; color: var(--faint); }
 
+/* Putanja koja nije apsolutna — server bi je odbio, pokaži odmah. */
+.input.bad, input.bad { border-color: var(--err) !important; }
+
 .picker-meta { display: flex; gap: 5px; align-items: center; }
 
 .picker-foot {

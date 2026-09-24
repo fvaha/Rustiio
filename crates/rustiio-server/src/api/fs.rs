@@ -57,10 +57,19 @@ pub struct Listing {
 }
 
 async fn list(State(state): State<AppState>, Query(query): Query<ListQuery>) -> Json<Listing> {
-    let wanted = query.path.as_deref().map(str::trim).filter(|path| !path.is_empty());
-    let current = wanted.map(expand).unwrap_or_else(start_dir);
+    let current = resolve(query.path.as_deref());
     let extensions = state.config.library.video_extensions.clone();
     Json(read_dir(&current, &extensions))
+}
+
+/// Što je korisnik tražio → **apsolutna** putanja (ili početna mapa korisnika).
+///
+/// Relativna putanja bi se u sučelju spremila u config, a server bi je odbio
+/// ("mapa mora biti apsolutna putanja") — zato se ovdje odmah učvrsti.
+fn resolve(requested: Option<&str>) -> PathBuf {
+    let wanted = requested.map(str::trim).filter(|path| !path.is_empty());
+    let base = wanted.map(expand).unwrap_or_else(start_dir);
+    std::path::absolute(&base).unwrap_or(base)
 }
 
 /// `~` i prazno → početna mapa korisnika.
@@ -228,6 +237,18 @@ mod tests {
         let expanded = expand("~");
         assert_eq!(expanded, home().expect("home"));
         assert!(start_dir().is_absolute());
+    }
+
+    #[test]
+    fn relative_request_becomes_absolute() {
+        // Bez ovoga sučelje spremi "Users/vaha/…" i server odbije config.
+        for requested in [Some("Users/vaha"), Some("."), Some(""), None] {
+            let resolved = resolve(requested);
+            assert!(resolved.is_absolute(), "{requested:?} → {}", resolved.display());
+        }
+        assert_eq!(resolve(Some("~")), home().expect("home"));
+        assert_eq!(resolve(None), home().expect("home"), "prazno znači početna mapa");
+        assert!(resolve(Some("~/Downloads")).ends_with("Downloads"));
     }
 
     #[test]

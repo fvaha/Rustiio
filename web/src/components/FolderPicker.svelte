@@ -15,6 +15,7 @@
     loading: 'Čitam mapu…',
     shortcuts: 'Brzi put',
     chosen: 'Odabrano',
+    notAbsolute: 'Putanja mora biti apsolutna (počinje s „/"). Odaberi mapu iz popisa.',
   }
   const en = {
     title: 'Pick the folder with your video',
@@ -28,6 +29,7 @@
     loading: 'Reading folder…',
     shortcuts: 'Shortcuts',
     chosen: 'Selected',
+    notAbsolute: 'The path must be absolute (start with "/"). Pick a folder from the list.',
   }
   const t = $derived(lang === 'en' ? en : hr)
 
@@ -35,16 +37,19 @@
   let listing = $state(null)
   let error = $state('')
   let busy = $state(false)
-  let segments = $derived(
-    path
-      .split(/[/\\]/)
-      .filter(Boolean)
-      .map((name, index, all) => ({
-        name,
-        // Windows: "C:" nosi svoju kosu crtu
-        path: (index === 0 && name.endsWith(':') ? name + '\\' : '') + all.slice(0, index + 1).join('/'),
-      })),
-  )
+
+  // Mrvice moraju dati **apsolutnu** putanju — inače se u config spremi
+  // "Users/vaha/…" i server ga odbije ("mapa mora biti apsolutna putanja").
+  let segments = $derived.by(() => {
+    const raw = String(path ?? '')
+    const parts = raw.split(/[/\\]/).filter(Boolean)
+    const windows = /^[A-Za-z]:/.test(raw)
+    const root = windows ? `${parts[0]}\\` : '/'
+    const rest = windows ? parts.slice(1) : parts
+    return rest.map((name, index) => ({ name, path: root + rest.slice(0, index + 1).join('/') }))
+  })
+
+  const isAbsolute = (candidate) => String(candidate ?? '').startsWith('/') || /^[A-Za-z]:[/\\]/.test(String(candidate ?? ''))
 
   async function load(target) {
     busy = true
@@ -69,6 +74,16 @@
 
   function onKey(event) {
     if (event.key === 'Escape' && open) onclose()
+  }
+
+  /// Odabir je moguć samo s apsolutnom putanjom — server takvu i traži.
+  function useFolder() {
+    if (!isAbsolute(path)) {
+      error = t.notAbsolute
+      return
+    }
+    onpick(path)
+    onclose()
   }
 </script>
 
@@ -135,7 +150,7 @@
         <span class="picker-picked mono">{t.chosen}: {path}</span>
         <span class="spacer"></span>
         <button class="btn" type="button" onclick={onclose}>{t.cancel}</button>
-        <button class="btn primary" type="button" disabled={busy || !!error} onclick={() => { onpick(path); onclose() }}>
+        <button class="btn primary" type="button" disabled={busy} onclick={useFolder}>
           {t.pick}
         </button>
       </footer>
