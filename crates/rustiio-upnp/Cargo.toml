@@ -1,0 +1,16 @@
+[package]
+name = "rustiio-upnp"
+description = "UPnP sloj: device.xml, SCPD, SOAP, DIDL-Lite i protocolInfo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+rustiio-core.workspace = true
+anyhow.workspace = true
+quick-xml.workspace = true
+percent-encoding.workspace = true
+tracing.workspace = true

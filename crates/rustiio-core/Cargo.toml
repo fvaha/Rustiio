@@ -1,0 +1,17 @@
+[package]
+name = "rustiio-core"
+description = "Rustiio temelj: konfiguracija, identitet uredaja, mrezni pomocnici"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+toml.workspace = true
+uuid.workspace = true
+hostname.workspace = true
+tracing.workspace = true

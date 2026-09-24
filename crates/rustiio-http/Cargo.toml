@@ -1,0 +1,19 @@
+[package]
+name = "rustiio-http"
+description = "Medijski HTTP sloj: byte-range, DLNA headeri, streaming"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+rustiio-core.workspace = true
+rustiio-upnp.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+httpdate.workspace = true
+tracing.workspace = true

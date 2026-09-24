@@ -1,0 +1,10 @@
+/target
+**/*.rs.bk
+.DS_Store
+*.log
+/.idea
+/.vscode
+web/node_modules
+web/dist
+apps/rustiio-desktop/src-tauri/target
+/scratch
