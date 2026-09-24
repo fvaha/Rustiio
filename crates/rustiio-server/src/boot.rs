@@ -160,7 +160,15 @@ pub async fn boot(config_path: PathBuf, options: BootOptions) -> anyhow::Result<
         .await
         .with_context(|| format!("bind na {}:{port}", config.server.bind))?;
     let addr = listener.local_addr().with_context(|| "lokalna adresa")?;
-    let ssdp = start_alive(&config, &identity, &ip, &base_url, options.ssdp).await?;
+    // SSDP je važan, ali ako padne (npr. zauzet port 1900) server i dalje radi —
+    // bolje reći pa nastaviti nego da se cijela aplikacija ne digne.
+    let ssdp = match start_alive(&config, &identity, &ip, &base_url, options.ssdp).await {
+        Ok(handle) => handle,
+        Err(error) => {
+            warn!(error = %error, "SSDP nije pokrenut — TV-i nas nece naci sami");
+            None
+        }
+    };
 
     Ok(Booted { state, config, identity, ip, port, base_url, listener: Some(listener), addr, ssdp, watcher })
 }

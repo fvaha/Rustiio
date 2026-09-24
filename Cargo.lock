@@ -1089,6 +1089,7 @@ dependencies = [
  "rustiio-http",
  "rustiio-library",
  "rustiio-profiles",
+ "rustiio-ssdp",
  "rustiio-transcode",
  "rustiio-upnp",
  "serde",

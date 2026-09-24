@@ -1,0 +1,29 @@
+[package]
+name = "rustiio-desktop"
+description = "Rustiio u prozoru — isti server, samo s vlastitim sučeljem"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+authors = ["vaha.net"]
+repository = "https://vaha.net"
+
+# Vlastiti workspace namjerno: desktop app traži webview (webkit2gtk na Linuxu,
+# WebView2 na Windowsima, WKWebView na macOS-u). Da ostane član glavnog workspacea,
+# `cargo test --workspace` na serveru bez webkit ovisnosti ne bi prolazio.
+[workspace]
+
+[dependencies]
+rustiio-core = { path = "../../crates/rustiio-core" }
+rustiio-server = { path = "../../crates/rustiio-server" }
+anyhow = "1"
+tauri = { version = "2", features = [] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

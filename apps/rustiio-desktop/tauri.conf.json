@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Rustiio",
+  "version": "0.1.0",
+  "identifier": "net.vaha.rustiio",
+  "build": {
+    "frontendDist": "dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Entertainment",
+    "shortDescription": "DLNA/UPnP media server",
+    "longDescription": "Rustiio je DLNA/UPnP media server s web sučeljem. Desktop aplikacija diže isti server i prikazuje njegovo sučelje u vlastitom prozoru — biblioteka, uređaji, prekodiranje i postavke na jednom mjestu.",
+    "icon": ["icons/icon.png"]
+  }
+}

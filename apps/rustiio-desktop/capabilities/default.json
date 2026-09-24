@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Glavni prozor Rustiio sučelja (server se poslužuje lokalno, API se ne dira).",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
