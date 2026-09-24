@@ -318,5 +318,25 @@ Zamke nađene živim testiranjem:
 | `PUT/GET /api/playstate/{id}` | pozicija 15000 ms zapisana; VLC i Samsung TV imaju **odvojene** pozicije |
 | `GET /api/continue` | nezavršeni film se vraća; nakon 95 % filma nestaje (auto-"odgledano") |
 
-**Sljedeća konkretna akcija:** Faza 3 ostatak — CDS `Search` akcija preko FTS-a, `notify` watcher
-(delta scan), TMDB obogaćivanje s poster cacheom.
+**Sljedeća konkretna akcija:** Faza 3 ostatak — auto-dohvat titlova (OpenSubtitles/titlovi.com),
+noćni full scan (watcher već pokriva delta), i provjera na Sharp Aquosu. Onda Faza 4 (web UI).
+
+## 8. Instalacija (native, bez Dockera) — odluka 2026-09-24
+
+Korisnik: **sve platforme rade isto, ffmpeg je u paketu, box .10 se instalira direktno (bez Dockera)**.
+
+| što | gdje |
+|---|---|
+| binarni fajl | `/usr/local/bin/rustiio` |
+| priloženi alati (ffmpeg/ffprobe) | `/usr/local/bin/` — `rustiio-core/src/tools.rs` ih traži prije `PATH`-a |
+| config (čuva se pri reinstalaciji) | `/var/lib/rustiio/config.toml` |
+| baza + posteri | `/var/lib/rustiio/{rustiio.db,art/}` |
+| systemd | `/etc/systemd/system/rustiio.service` (`StateDirectory=rustiio`, `ProtectHome=read-only`) |
+
+- Instalacija: `sudo deploy/native/install.sh` (idempotentno: `BIN=`, `MEDIA_ROOT=`, `PREFIX=`, `STATE_DIR=`, `SERVICE_USER=`).
+- Box je prešao s Dockera 2026-09-24: kontejner obrisan, servis `active` + `enabled`; **zadržan isti `udn` i baza**
+  (kopirana u `/var/lib/rustiio`) → TV-i ne vide novi uređaj, id-evi ostaju isti.
+- Dokazano na boxu: `health` 200, `koristim prilozene alate uz program` (ffmpeg iz paketa),
+  `hardversko ubrzanje dostupno hw="NVIDIA NVENC"` bez kontejnera, `0 rustiio kontejnera`.
+- Otvoreno za Fazu 5: pravi **statični** ffmpeg po platformi (trenutno je na boxu kopija sistemskog),
+  `.deb`/`.dmg`/`.msi` s tim istim rasporedom.
