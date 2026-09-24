@@ -33,9 +33,13 @@ impl Default for UiSection {
     }
 }
 
-/// Zadani jezik sucelja: prati browser (`navigator.language`).
+/// Zadani jezik sučelja: hrvatski.
+///
+/// Namjerno nije `auto` — sučelje mora izgledati isto u desktop aplikaciji i u
+/// browseru, a `auto` bi u jednom prozoru dao hrvatski, a u drugom engleski
+/// (svaki prati svoj `navigator.language`). Korisnik prebaci u Postavkama.
 pub fn default_language() -> String {
-    "auto".to_string()
+    "hr".to_string()
 }
 
 impl Config {
