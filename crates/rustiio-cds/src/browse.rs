@@ -6,6 +6,8 @@ use rustiio_upnp::didl::{self, Object, Resource};
 use rustiio_upnp::protocol;
 use rustiio_upnp::{escape_path_segment, render_didl};
 
+use crate::views::{self, View};
+
 /// Najveci broj objekata u jednom odgovoru (TV-i traze 0 = "sve").
 pub const MAX_RESULTS: u32 = 500;
 
@@ -17,6 +19,25 @@ pub struct BrowseRequest {
     pub starting_index: u32,
     pub requested_count: u32,
     pub sort_criteria: String,
+}
+
+/// Sve sto CDS treba znati o serveru (bez ovoga bi lista argumenata rasla svakom fazom).
+#[derive(Debug, Clone)]
+pub struct BrowseOptions<'a> {
+    /// `http://192.168.1.10:8200`
+    pub base_url: &'a str,
+    /// Gornja granica objekata u odgovoru.
+    pub max_results: u32,
+    /// Prikazuj virtualne kategorije (Video/Muzika/Slike/Nedavno dodano).
+    pub views: bool,
+    /// Koliko objekata ide u "Nedavno dodano".
+    pub recent_limit: u32,
+}
+
+impl<'a> BrowseOptions<'a> {
+    pub fn new(base_url: &'a str) -> Self {
+        Self { base_url, max_results: MAX_RESULTS, views: true, recent_limit: 20 }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -64,39 +85,75 @@ pub fn sort_capabilities() -> &'static str {
 pub fn browse(
     catalog: &Catalog,
     request: &BrowseRequest,
-    base_url: &str,
-    max_results: u32,
+    options: &BrowseOptions<'_>,
 ) -> Result<BrowseOutcome, CdsError> {
-    let object_id = if request.object_id.is_empty() { "0" } else { request.object_id.as_str() };
-    let node = catalog.get(object_id).ok_or(CdsError::NoSuchObject)?;
-
-    let metadata_only = request.browse_flag.eq_ignore_ascii_case("BrowseMetadata");
     if request.browse_flag.is_empty() {
         return Err(CdsError::InvalidArgs("fali BrowseFlag".to_string()));
     }
-
     let update_id = catalog.update_id;
+    let metadata_only = request.browse_flag.eq_ignore_ascii_case("BrowseMetadata");
+    let object_id = if request.object_id.is_empty() { "0" } else { request.object_id.as_str() };
 
+    // Virtualna kategorija (`v:video`, `v:recent`, ...).
+    if let Some(view) = views::find(object_id) {
+        if !options.views {
+            return Err(CdsError::NoSuchObject);
+        }
+        if metadata_only {
+            let object = view_object(view, catalog, options);
+            return Ok(BrowseOutcome { didl: render_didl(&[object]), total: 1, returned: 1, update_id });
+        }
+        let mut items = view.items(catalog, options.recent_limit);
+        sort_nodes(&mut items, &request.sort_criteria);
+        return paginate(catalog, items, request, options, update_id);
+    }
+
+    let node = catalog.get(object_id).ok_or(CdsError::NoSuchObject)?;
     if metadata_only {
-        let object = node_to_object(node, catalog, base_url);
+        let object = node_to_object(node, catalog, options.base_url);
         return Ok(BrowseOutcome { didl: render_didl(&[object]), total: 1, returned: 1, update_id });
     }
 
     let mut children = catalog.children(object_id);
-    sort_nodes(&mut children, &request.sort_criteria);
+    if object_id == "0" && options.views {
+        for view in views::ALL {
+            children.push(view.node());
+        }
+        order_root_children(&mut children, &request.sort_criteria);
+    } else {
+        sort_nodes(&mut children, &request.sort_criteria);
+    }
 
+    paginate(catalog, children, request, options, update_id)
+}
+
+fn paginate(
+    catalog: &Catalog,
+    children: Vec<Node>,
+    request: &BrowseRequest,
+    options: &BrowseOptions<'_>,
+    update_id: u32,
+) -> Result<BrowseOutcome, CdsError> {
     let total = children.len() as u32;
-    let limit = if max_results == 0 { MAX_RESULTS } else { max_results };
+    let limit = if options.max_results == 0 { MAX_RESULTS } else { options.max_results };
     let wanted = if request.requested_count == 0 { limit } else { request.requested_count.min(limit) };
     let start = request.starting_index as usize;
-    let page: Vec<Object> = children
+
+    let objects: Vec<Object> = children
         .iter()
         .skip(start)
         .take(wanted as usize)
-        .map(|child| node_to_object(child, catalog, base_url))
+        .map(|child| match views::find(&child.id) {
+            Some(view) => view_object(view, catalog, options),
+            None => node_to_object(child, catalog, options.base_url),
+        })
         .collect();
 
-    Ok(BrowseOutcome { returned: page.len() as u32, didl: render_didl(&page), total, update_id })
+    Ok(BrowseOutcome { returned: objects.len() as u32, didl: render_didl(&objects), total, update_id })
+}
+
+fn view_object(view: View, catalog: &Catalog, options: &BrowseOptions<'_>) -> Object {
+    Object::container(view.id(), "0", view.title(), view.count(catalog, options.recent_limit))
 }
 
 /// Pretvori cvor kataloga u DIDL objekt s resursima (i titlom, ako ga ima).
@@ -154,10 +211,31 @@ pub fn node_to_object(node: &Node, catalog: &Catalog, base_url: &str) -> Object 
     object
 }
 
+/// Vrh stabla: kategorije prve (fiksni redoslijed), pa prave mape abecedno.
+fn order_root_children(nodes: &mut Vec<Node>, criteria: &str) {
+    if !criteria.trim().is_empty() {
+        sort_nodes(nodes, criteria);
+        return;
+    }
+    let mut categories = Vec::new();
+    let mut rest = Vec::new();
+    for node in nodes.drain(..) {
+        if views::is_view_id(&node.id) {
+            categories.push(node);
+        } else {
+            rest.push(node);
+        }
+    }
+    categories.sort_by_key(|node| views::find(&node.id).map(|view| view.position()).unwrap_or(usize::MAX));
+    rest.sort_by_key(|node| node.title.to_lowercase());
+    nodes.extend(categories);
+    nodes.extend(rest);
+}
+
 fn sort_nodes(nodes: &mut [Node], criteria: &str) {
-    let first = criteria.split(',').next().unwrap_or("").trim().to_string();
+    let first = criteria.split(',').next().unwrap_or("").trim();
     if first.is_empty() {
-        // TV nije rekao kako sortirati — mapе prvo, pa abecedno.
+        // TV nije rekao kako sortirati — mape prvo, pa abecedno.
         nodes.sort_by(|a, b| {
             b.is_container()
                 .cmp(&a.is_container())
@@ -167,7 +245,7 @@ fn sort_nodes(nodes: &mut [Node], criteria: &str) {
     }
     let (descending, field) = match first.strip_prefix('-') {
         Some(rest) => (true, rest),
-        None => (false, first.strip_prefix('+').unwrap_or(&first)),
+        None => (false, first.strip_prefix('+').unwrap_or(first)),
     };
     match field {
         "dc:date" => nodes.sort_by(|a, b| a.modified.cmp(&b.modified)),
@@ -197,22 +275,97 @@ mod tests {
         dir
     }
 
+    fn options() -> BrowseOptions<'static> {
+        BrowseOptions {
+            base_url: "http://10.0.0.1:8200",
+            max_results: MAX_RESULTS,
+            views: true,
+            recent_limit: 20,
+        }
+    }
+
+    fn children_request(object_id: &str) -> BrowseRequest {
+        BrowseRequest {
+            object_id: object_id.to_string(),
+            browse_flag: "BrowseDirectChildren".to_string(),
+            ..Default::default()
+        }
+    }
+
     #[test]
-    fn browse_root_returns_storage_folder() {
+    fn browse_root_returns_storage_folder_and_categories() {
         let dir = temp_dir("root");
         std::fs::write(dir.join("A.mkv"), b"x").unwrap();
         let catalog = catalog_with(&dir);
 
-        let request = BrowseRequest {
-            object_id: "0".to_string(),
-            browse_flag: "BrowseDirectChildren".to_string(),
-            ..Default::default()
-        };
-        let out = browse(&catalog, &request, "http://10.0.0.1:8200", 0).expect("browse");
-        assert_eq!(out.total, 1);
-        assert_eq!(out.returned, 1);
+        let out = browse(&catalog, &children_request("0"), &options()).expect("browse");
+        assert_eq!(out.total, 5, "1 mapa + 4 kategorije");
         assert!(out.didl.contains("<dc:title>Filmovi</dc:title>"));
         assert!(out.didl.contains("object.container.storageFolder"));
+        for title in ["Video", "Nedavno dodano", "Muzika", "Slike"] {
+            assert!(out.didl.contains(&format!("<dc:title>{title}</dc:title>")), "fali {title}");
+        }
+        // kategorije idu prije pravih mapa
+        assert!(out.didl.find("v:video").unwrap() < out.didl.find("<dc:title>Filmovi</dc:title>").unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn views_can_be_disabled() {
+        let dir = temp_dir("noviews");
+        std::fs::write(dir.join("A.mkv"), b"x").unwrap();
+        let catalog = catalog_with(&dir);
+
+        let mut opts = options();
+        opts.views = false;
+        let out = browse(&catalog, &children_request("0"), &opts).expect("browse");
+        assert_eq!(out.total, 1);
+        assert!(!out.didl.contains("v:video"), "kategorija ne smije biti u listi");
+
+        let direct = browse(&catalog, &children_request("v:video"), &opts);
+        assert_eq!(direct.map(|_| ()), Err(CdsError::NoSuchObject));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn video_category_lists_movies_with_playable_urls() {
+        let dir = temp_dir("category");
+        std::fs::create_dir_all(dir.join("Serije")).unwrap();
+        std::fs::write(dir.join("Serije/Epizoda.mkv"), vec![0u8; 32]).unwrap();
+        let catalog = catalog_with(&dir);
+
+        let out = browse(&catalog, &children_request("v:video"), &options()).expect("browse");
+        assert_eq!(out.total, 1, "video iz podmape se vidi u kategoriji");
+        assert!(out.didl.contains("<dc:title>Epizoda</dc:title>"));
+        assert!(out.didl.contains("/res/"));
+        assert!(out.didl.contains("video/x-matroska"));
+
+        let meta = browse(
+            &catalog,
+            &BrowseRequest {
+                object_id: "v:video".into(),
+                browse_flag: "BrowseMetadata".into(),
+                ..Default::default()
+            },
+            &options(),
+        )
+        .expect("metadata");
+        assert!(meta.didl.contains(r#"childCount="1""#));
+        assert!(meta.didl.contains("<dc:title>Video</dc:title>"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recent_category_is_limited() {
+        let dir = temp_dir("recent");
+        for name in ["a", "b", "c"] {
+            std::fs::write(dir.join(format!("{name}.mkv")), b"x").unwrap();
+        }
+        let catalog = catalog_with(&dir);
+        let mut opts = options();
+        opts.recent_limit = 2;
+        let out = browse(&catalog, &children_request("v:recent"), &opts).expect("browse");
+        assert_eq!(out.total, 2);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -224,12 +377,7 @@ mod tests {
         let catalog = catalog_with(&dir);
 
         let folder_id = catalog.get("0").unwrap().children[0].clone();
-        let request = BrowseRequest {
-            object_id: folder_id,
-            browse_flag: "BrowseDirectChildren".to_string(),
-            ..Default::default()
-        };
-        let out = browse(&catalog, &request, "http://10.0.0.1:8200", 0).expect("browse");
+        let out = browse(&catalog, &children_request(&folder_id), &options()).expect("browse");
 
         assert!(out.didl.contains("http-get:*:video/x-matroska:DLNA.ORG_OP=01"));
         assert!(out.didl.contains("res/2/The%20Movie%20(2019).mkv"));
@@ -246,11 +394,11 @@ mod tests {
         let catalog = catalog_with(&dir);
 
         let request = BrowseRequest {
-            object_id: "1".to_string(),
-            browse_flag: "BrowseMetadata".to_string(),
+            object_id: "1".into(),
+            browse_flag: "BrowseMetadata".into(),
             ..Default::default()
         };
-        let out = browse(&catalog, &request, "http://10.0.0.1:8200", 0).expect("browse");
+        let out = browse(&catalog, &request, &options()).expect("browse");
         assert_eq!(out.total, 1);
         assert!(out.didl.contains("<dc:title>Filmovi</dc:title>"));
         let _ = std::fs::remove_dir_all(&dir);
@@ -260,18 +408,14 @@ mod tests {
     fn unknown_object_is_701_and_bad_flag_is_402() {
         let dir = temp_dir("err");
         let catalog = catalog_with(&dir);
+        let opts = options();
 
-        let missing = BrowseRequest {
-            object_id: "999".to_string(),
-            browse_flag: "BrowseDirectChildren".to_string(),
-            ..Default::default()
-        };
-        assert_eq!(browse(&catalog, &missing, "http://x", 0).map(|_| ()), Err(CdsError::NoSuchObject));
+        let missing = children_request("999");
+        assert_eq!(browse(&catalog, &missing, &opts).map(|_| ()), Err(CdsError::NoSuchObject));
         assert_eq!(CdsError::NoSuchObject.code(), 701);
 
-        let bad =
-            BrowseRequest { object_id: "0".to_string(), browse_flag: String::new(), ..Default::default() };
-        assert!(matches!(browse(&catalog, &bad, "http://x", 0), Err(CdsError::InvalidArgs(_))));
+        let bad = BrowseRequest { object_id: "0".into(), browse_flag: String::new(), ..Default::default() };
+        assert!(matches!(browse(&catalog, &bad, &opts), Err(CdsError::InvalidArgs(_))));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -290,7 +434,7 @@ mod tests {
             sort_criteria: "+dc:title".to_string(),
             ..Default::default()
         };
-        let out = browse(&catalog, &request, "http://x", 0).expect("browse");
+        let out = browse(&catalog, &request, &options()).expect("browse");
         assert_eq!(out.total, 4);
         assert_eq!(out.returned, 2);
         assert!(out.didl.contains("<dc:title>b</dc:title>"));

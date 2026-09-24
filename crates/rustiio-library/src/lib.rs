@@ -4,8 +4,10 @@
 //! start). Faza 3 ga zamjenjuje SQLite indeksom s ffprobe metapodacima i stabilnim
 //! ID-jevima — struktura [`Catalog`] ostaje ista, pa CDS ne treba mijenjati.
 
+pub mod probe;
 pub mod scan;
 
+pub use probe::DurationProbe;
 pub use scan::{Catalog, Node, NodeKind, ScanOptions, classify, scan};
 
 /// Ekstenzije titlova koje prepoznajemo (DJELJENO s CDS-om i HTTP slojem).

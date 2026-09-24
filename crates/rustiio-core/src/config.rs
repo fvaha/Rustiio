@@ -96,11 +96,21 @@ pub struct LibrarySection {
     pub video_extensions: Vec<String>,
     /// Koliko duboko skeniramo (zastita od beskonacnih stabala).
     pub max_depth: u32,
+    /// Virtualne kategorije na vrhu (Video / Muzika / Slike / Nedavno dodano).
+    pub views: bool,
+    /// Koliko objekata ide u "Nedavno dodano".
+    pub recent_limit: u32,
 }
 
 impl Default for LibrarySection {
     fn default() -> Self {
-        Self { roots: guess_roots(), video_extensions: default_video_extensions(), max_depth: 8 }
+        Self {
+            roots: guess_roots(),
+            video_extensions: default_video_extensions(),
+            max_depth: 8,
+            views: true,
+            recent_limit: 20,
+        }
     }
 }
 
@@ -136,6 +146,8 @@ pub struct TranscodeSection {
     pub max_concurrent: u32,
     /// Koliko sekundi unaprijed ffmpeg smije ici prije gledatelja (buffering).
     pub buffer_secs: u32,
+    /// Ocituj trajanje preko ffprobe (potrebno za `TimeSeekRange`).
+    pub probe_duration: bool,
 }
 
 impl Default for TranscodeSection {
@@ -147,6 +159,7 @@ impl Default for TranscodeSection {
             hw_accel: "auto".to_string(),
             max_concurrent: 2,
             buffer_secs: 30,
+            probe_duration: true,
         }
     }
 }

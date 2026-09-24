@@ -1,6 +1,7 @@
 //! Podnaredbe i inicijalizacija loganja.
 
 pub mod doctor;
+pub mod health;
 pub mod init;
 pub mod probe;
 pub mod run;

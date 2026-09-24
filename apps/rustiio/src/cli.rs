@@ -33,6 +33,8 @@ pub enum Command {
     Probe(ProbeArgs),
     /// Provjeri okolinu: config, IP, port, ffmpeg, mape.
     Doctor,
+    /// Provjeri radi li server (HTTP 200 na /healthz); izlazni kod 1 ako ne radi.
+    Health(HealthArgs),
     /// Napisi default config i izadji.
     Init,
 }
@@ -61,4 +63,17 @@ pub struct ProbeArgs {
     /// Search target (npr. urn:schemas-upnp-org:device:MediaServer:1).
     #[arg(short, long, default_value = "ssdp:all")]
     pub st: String,
+}
+
+#[derive(Debug, Args)]
+pub struct HealthArgs {
+    /// URL koji se provjerava.
+    #[arg(short, long, default_value = "http://127.0.0.1:8200/healthz")]
+    pub url: String,
+    /// Koliko sekundi cekati odgovor.
+    #[arg(short, long, default_value_t = 3)]
+    pub timeout: u64,
+    /// Ne ispisuj nista kad je sve u redu (za skripte).
+    #[arg(short, long)]
+    pub quiet: bool,
 }

@@ -1,0 +1,53 @@
+# Rustiio — primjer konfiguracije (kopiraj u deploy/config/config.toml ili ~/.config/rustiio/config.toml)
+#
+# Nakon prvog pokretanja Rustiio sam dopiše `udn` — ne mijenjaj ga, inače TV-i
+# vide novi uređaj i izgube pamćenje pozicije/omiljenih.
+
+[server]
+friendly_name = "Rustiio"
+bind = "0.0.0.0"
+http_port = 8200
+# IP na kojem server stvarno sjedi u LAN-u (npr. 192.168.1.10). Ako je prazno,
+# Rustiio pogodi primarnu adresu — ali na serveru s više mreža postavi ručno.
+advertise_ip = "192.168.1.10"
+max_age_secs = 1800
+ssdp = true
+log_level = "info"
+
+[library]
+# Virtualne kategorije na vrhu: Video, Nedavno dodano, Muzika, Slike.
+views = true
+recent_limit = 20
+max_depth = 8
+video_extensions = ["mkv", "mp4", "m4v", "avi", "mov", "ts", "m2ts", "mts", "webm", "mpg", "mpeg", "wmv", "flv", "divx", "vob", "ogv"]
+
+[[library.roots]]
+label = "Filmovi"
+path = "/media/filmovi"
+kind = "video"
+
+[[library.roots]]
+label = "Serije"
+path = "/media/serije"
+kind = "video"
+
+[[library.roots]]
+label = "Muzika"
+path = "/media/muzika"
+kind = "audio"
+
+[[library.roots]]
+label = "Slike"
+path = "/media/slike"
+kind = "image"
+
+[transcode]
+enabled = true
+ffmpeg_path = "ffmpeg"
+ffprobe_path = "ffprobe"
+# auto | none | nvenc | vaapi | qsv | videotoolbox | amf
+hw_accel = "auto"
+max_concurrent = 2
+buffer_secs = 30
+# ffprobe trajanje — treba za TimeSeekRange (seek po vremenu na Samsungu/Philipsu).
+probe_duration = true

@@ -1,0 +1,29 @@
+[Unit]
+Description=Rustiio DLNA/UPnP media server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vaha
+Group=vaha
+# Config (i kasnije baza) žive u /var/lib/rustiio — systemd ga stvori i vlasništvo da vaha.
+StateDirectory=rustiio
+Environment=RUSTIIO_CONFIG_DIR=/var/lib/rustiio
+Environment=RUST_LOG=info
+ExecStart=/usr/local/bin/rustiio run
+# Health-check na razini systemd-a: ako /healthz ne vrati 200, restartaj.
+ExecStartPost=/bin/sh -c 'sleep 2; /usr/local/bin/rustiio health --quiet'
+Restart=on-failure
+RestartSec=3
+
+# Server ne piše ništa osim svog state direktorija; medije samo čita.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/rustiio
+PrivateTmp=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

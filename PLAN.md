@@ -2,8 +2,9 @@
 
 > Univerzalni DLNA/UPnP media server u Rustu. Jedan binarni fajl, radi svugdje, s web sučeljem i desktop GUI-jem.
 
-**Status:** Faza 0 (temelj) + Faza 1 (DLNA MVP) u izradi
+**Status:** Faza 0 (temelj) ✅ + Faza 1 (DLNA MVP) ✅ + Faza 2 (profili + transcode) u izradi
 **Zadnja izmjena:** 2026-09-24
+**Živo:** `Rustiio (box)` radi na 192.168.1.10:8200 (Docker, host mreža) — 168 objekata (95 video, 44 audio, 29 mapa).
 
 ---
 
@@ -116,16 +117,17 @@
 - Oba TV-a vide izvor i reproduciraju film.
 - RSS idle < 40 MB (`/usr/bin/time -l` na macOS, `ps -o rss=` na Linuxu).
 
-### Faza 1 — DLNA MVP (u tijeku, nastavak Faze 0)
+### Faza 1 — DLNA MVP ✅ (2026-09-24)
 
-Ostatak do "TV pušta film bez ffmpeg-a":
-- [ ] SOAP eventing (`SUBSCRIBE`/`NOTIFY`) — ili gašenje eventing-a (412) i provjera da TV-i to prihvaćaju
-- [ ] `TimeSeekRange.dlna.org` (seek preko range headera na nekim Samsung modelima)
-- [ ] više root mapa + kategorije (Filmovi / Serije / Razno) iz configa
-- [ ] test protiv oba TV-a + VLC + Kodi; zapisati što svaki uređaj traži (`tcpdump`/log)
-- [ ] Docker slika + systemd unit (priprema za .10)
+- [x] SOAP eventing (`SUBSCRIBE`/`UNSUBSCRIBE`) + pravi `NOTIFY` (`rustiio-server/src/gena.rs`): registar pretplata, obnova po `SID`, `412` za nevaljale zahtjeve, inicijalni event (SEQ 0), ponovni event nakon svakog reskena
+- [x] `TimeSeekRange.dlna.org` (seek po vremenu) + lijeno trajanje preko ffprobe-a (`rustiio-library/src/probe.rs`, `rustiio-http/src/time_seek.rs`)
+- [x] virtualne kategorije na vrhu stabla: **Video / Nedavno dodano / Muzika / Slike** (`rustiio-cds/src/views.rs`), uključivo/isključivo kroz config (`views`, `recent_limit`)
+- [x] Docker slika + `docker-compose.yml` (host mreža zbog SSDP-a) + systemd unit + `rustiio health` za healthcheck
+- [x] deploy na .10 (Docker) — Rustiio se oglašava u LAN-u uz router i Mac instancu
+- [ ] prvi test na oba TV-a (Samsung MU6172 + Sharp Aquos) — čeka korisnika
+- [ ] zapisati što svaki uređaj traži (`tcpdump -i any udp port 1900` + `--log debug`) — mehanizam je spreman (media zahtjevi se logiraju s `range`/`time_seek`/`UA`), zapis slijedi kad se TV spoji
 
-**Acceptance:** TV pušta 1080p H.264 MKV direktno, seek radi, titl se vidi ako ga TV podržava.
+**Acceptance:** TV pušta 1080p H.264 MKV direktno, seek radi, titl se vidi ako ga TV podržava. → *direct play i seek dokazani kroz HTTP/ffprobe; TV potvrda preostaje.*
 
 ### Faza 2 — Profili + transcode (~1–2 tjedna)
 
@@ -246,11 +248,27 @@ Ostatak do "TV pušta film bez ffmpeg-a":
 | `/healthz`, `/api/status`, `/api/rescan` | rade |
 | RAM (idle, 2 videa) | **8.9 MB** (Serviio: 207 MB) |
 
-**Faza 1 — ostaje:**
-- [ ] prvi test na oba TV-a (Samsung MU6172 + Sharp Aquos) — pokreni `rustiio run` na .10 i provjeri izvore
-- [ ] `TimeSeekRange.dlna.org` (seek na Samsung modelima koji ne koriste `Range`)
-- [ ] provjera da TV-i prihvaćaju naše SCPD-e i (`SUBSCRIBE` → SID) eventing
-- [ ] zapisati što svaki uređaj traži (`tcpdump -i any udp port 1900` + `--log debug`)
-- [ ] Docker slika + systemd unit za .10
+**Faza 1 — završena i provjerena (2026-09-24):**
 
-**Sljedeća konkretna akcija:** pustiti `rustiio run` na 192.168.1.10 (uz Serviio) i otvoriti DLNA izvor na TV-u.
+| provjera | rezultat |
+|---|---|
+| `cargo test --workspace` | **100 testova** prolazi (dodani: views, time_seek, GENA registar + pravi NOTIFY na slušalicu, health, media plićak) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | čisto |
+| kategorije na vrhu (`Browse` na `0`) | `Video | Nedavno dodano | Muzika | Slike | Filmovi` (kategorije prve, pa prave mape) |
+| `Browse` na `v:video` | vidi filmove iz **svih podmapa** (Serije/S01/Epizoda 1 se pojavi u kategoriji) |
+| `BrowseMetadata` na kategoriji | `childCount` točan |
+| `TimeSeekRange.dlna.org: npt=00:00:10-` na filmu 20.023 s | `200 OK`, `content-length: 3628017` (pola fajla), `timeseekrange.dlna.org: npt=0:00:10.000-0:00:20.023/0:00:20.023` |
+| `TimeSeekRange` bez trajanja (probe isključen) | header se ignorira, ide cijeli fajl (TV se sam prebaci na `Range`) |
+| `TimeSeekRange` preko kraja filma | zadnji bajt, nikad prazno tijelo |
+| `SUBSCRIBE` bez headera | **412** |
+| `SUBSCRIBE` s `CALLBACK` + `NT` | `200`, `SID: uuid:rustiio-…`, `TIMEOUT: Second-300` (poštovan zahtjev TV-a) |
+| obnova pretplate (`SUBSCRIBE` + `SID`) | `200` s istim SID-om |
+| inicijalni `NOTIFY` | stigao na pravu slušalicu: `SEQ: 0`, `<SystemUpdateID>1</SystemUpdateID>` |
+| `POST /api/rescan` | drugi `NOTIFY` s `SEQ: 1` i novim `SystemUpdateID` |
+| Docker na .10 | `rustiio Up (healthy)`, 168 objekata (95 video, 44 audio, 29 mapa), `refresh` bez restarta |
+| SSDP iz Maca | `192.168.1.10` se oglašava kao `MediaServer:1` + `ContentDirectory:1` + `ConnectionManager:1` |
+| RAM | ~9 MB idle (Serviio: 207 MB) |
+
+**Napomena:** `serviio.service` je na .10 trenutno **inactive** — usporedba 1:1 na TV-u čeka da se Serviio upali (ili ne, ako Rustiio odmah radi).
+
+**Sljedeća konkretna akcija:** Faza 2 — `rustiio-profiles` (TOML baza + matcher + capture) i `rustiio-transcode` (decision engine + ffmpeg + HW detekcija).

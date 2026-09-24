@@ -1,0 +1,18 @@
+# Rustiio u Dockeru.
+#
+# VAŽNO: `network_mode: host` je obavezan — SSDP (UDP 1900, multicast 239.255.255.250)
+# ne prolazi kroz Docker bridge, pa TV-i ne bi vidjeli server. Zato nema port mappinga.
+services:
+  rustiio:
+    build: .
+    image: rustiio:latest
+    container_name: rustiio
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      RUSTIIO_CONFIG_DIR: /config
+      RUST_LOG: info
+    volumes:
+      - ./deploy/config:/config
+      # Medijske mape s hosta — prilagodi svojima (read-only je dovoljno).
+      - /home/vaha/multimedia:/media:ro

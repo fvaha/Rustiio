@@ -5,6 +5,8 @@
 
 pub mod media;
 pub mod range;
+pub mod time_seek;
 
 pub use media::{serve_file, serve_node_path};
 pub use range::parse_range;
+pub use time_seek::{TimeSeek, parse_time_seek};

@@ -1,4 +1,7 @@
-//! HTTP rute: UPnP (device.xml, SCPD, control) + mediji + mali REST API.
+//! HTTP rute: UPnP (device.xml, SCPD, control, eventing) + mediji + REST API.
+
+use std::path::{Path as FsPath, PathBuf};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::Bytes;
@@ -10,10 +13,11 @@ use serde_json::json;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, warn};
 
-use rustiio_cds::{BrowseRequest, MAX_RESULTS, browse, sort_capabilities};
-use rustiio_upnp::protocol::{self};
+use rustiio_cds::{BrowseOptions, BrowseRequest, MAX_RESULTS, browse, sort_capabilities};
+use rustiio_upnp::protocol;
 use rustiio_upnp::{device_description, escape, scpd, soap};
 
+use crate::gena;
 use crate::state::AppState;
 
 const XML_CONTENT_TYPE: &str = "text/xml; charset=\"utf-8\"";
@@ -28,8 +32,8 @@ pub fn router(state: AppState) -> Router {
         .route("/ConnectionManager/scpd.xml", get(connection_manager_scpd))
         .route("/ContentDirectory/control", post(content_directory_control))
         .route("/ConnectionManager/control", post(connection_manager_control))
-        .route("/ContentDirectory/event", any(eventing))
-        .route("/ConnectionManager/event", any(eventing))
+        .route("/ContentDirectory/event", any(content_directory_event))
+        .route("/ConnectionManager/event", any(connection_manager_event))
         .route("/res/{id}", get(media_by_id))
         .route("/res/{id}/{filename}", get(media_by_name))
         .route("/sub/{id}/{filename}", get(subtitle_by_name))
@@ -53,25 +57,103 @@ async fn connection_manager_scpd() -> Response {
     static_response(scpd::CONNECTION_MANAGER_SCPD)
 }
 
-/// Minimalni eventing: klijent dobije `SID` i `TIMEOUT`, ali dogadjaje jos ne saljemo.
-///
-/// TV-i (Samsung) znaju odustati od servisa ako `SUBSCRIBE` vrati gresku, zato
-/// radije pristojno potvrdimo pretplatu. Pravi NOTIFY dolazi u Fazi 6.
-async fn eventing(headers: HeaderMap) -> Response {
-    let is_unsubscribe = headers.get("sid").is_some() && headers.get("callback").is_none();
-    let sid = headers
-        .get("sid")
-        .and_then(|value| value.to_str().ok())
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| format!("uuid:{}", uuid_like()));
+// -------------------------------------------------------------- GENA / eventing
 
-    let mut builder = Response::builder().status(StatusCode::OK);
-    if !is_unsubscribe {
-        builder = builder.header("SID", sid).header("TIMEOUT", "Second-1800");
+async fn content_directory_event(
+    State(state): State<AppState>,
+    method: Method,
+    headers: HeaderMap,
+) -> Response {
+    eventing(state, gena::CONTENT_DIRECTORY, method, headers).await
+}
+
+async fn connection_manager_event(
+    State(state): State<AppState>,
+    method: Method,
+    headers: HeaderMap,
+) -> Response {
+    eventing(state, gena::CONNECTION_MANAGER, method, headers).await
+}
+
+/// `SUBSCRIBE` (nova pretplata ili obnova), `UNSUBSCRIBE`, sve ostalo 405.
+async fn eventing(state: AppState, service: &str, method: Method, headers: HeaderMap) -> Response {
+    match method.as_str() {
+        "SUBSCRIBE" => subscribe(state, service, headers).await,
+        "UNSUBSCRIBE" => {
+            let Some(sid) = header_str(&headers, "sid") else {
+                return precondition_failed("UNSUBSCRIBE bez SID-a");
+            };
+            if state.gena.unsubscribe(&sid) {
+                debug!(service = %service, sid = %sid, "pretplata ukinuta");
+                empty_ok()
+            } else {
+                precondition_failed("nepoznat SID")
+            }
+        }
+        other => {
+            warn!(service = %service, method = %other, "nepodrzana metoda na eventing ruti");
+            method_not_allowed()
+        }
     }
-    builder
-        .body(axum::body::Body::empty())
-        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+async fn subscribe(state: AppState, service: &str, headers: HeaderMap) -> Response {
+    let sid = header_str(&headers, "sid");
+    let callback = header_str(&headers, "callback");
+    let notification_type = header_str(&headers, "nt");
+    let timeout = header_str(&headers, "timeout");
+
+    // Obnova postojece pretplate (TV salje samo SID).
+    let Some(callback) = callback else {
+        let Some(sid) = sid else {
+            return precondition_failed("SUBSCRIBE bez CALLBACK i bez SID-a");
+        };
+        return match state.gena.renew(&sid) {
+            Some(_) => {
+                debug!(service = %service, sid = %sid, "pretplata obnovljena");
+                event_ok(&sid, &gena::timeout_header(timeout.as_deref()))
+            }
+            None => precondition_failed("nepoznat SID"),
+        };
+    };
+
+    if sid.is_some() {
+        return precondition_failed("SUBSCRIBE ne smije imati i SID i CALLBACK");
+    }
+    if !notification_type.map(|value| value.eq_ignore_ascii_case("upnp:event")).unwrap_or(false) {
+        return precondition_failed("fali NT: upnp:event");
+    }
+    let callbacks = gena::parse_callbacks(&callback);
+    if callbacks.is_empty() {
+        return precondition_failed("CALLBACK nije valjan URL");
+    }
+
+    let subscription = state.gena.subscribe(service, callbacks);
+    debug!(service = %service, sid = %subscription.sid, "nova pretplata");
+
+    // Inicijalni NOTIFY (SEQ 0) — TV tako odmah dobije pocetno stanje varijabli.
+    let body = event_body(&state, service);
+    let registry = state.gena.clone();
+    let pending = subscription.clone();
+    tokio::spawn(async move {
+        if gena::send_notify(&pending, &body, Duration::from_secs(5)).await {
+            registry.bump_seq(&pending.sid);
+        } else {
+            warn!(sid = %pending.sid, "inicijalni NOTIFY nije prosao — pretplata ostaje na cekanju");
+        }
+    });
+
+    event_ok(&subscription.sid, &gena::timeout_header(timeout.as_deref()))
+}
+
+fn event_body(state: &AppState, service: &str) -> String {
+    match service {
+        gena::CONNECTION_MANAGER => gena::connection_manager_body(
+            &protocol::source_protocol_info(&state.config.library.video_extensions),
+            "",
+        ),
+        _ => gena::content_directory_body(state.update_id()),
+    }
 }
 
 // ------------------------------------------------------------ SOAP / control
@@ -105,7 +187,13 @@ async fn content_directory_control(
                 sort_criteria: arg(&args, "SortCriteria").unwrap_or_default(),
             };
             let catalog = state.catalog.read().await;
-            match browse(&catalog, &browse_request, &state.base_url, MAX_RESULTS) {
+            let options = BrowseOptions {
+                base_url: &state.base_url,
+                max_results: MAX_RESULTS,
+                views: state.config.library.views,
+                recent_limit: state.config.library.recent_limit,
+            };
+            match browse(&catalog, &browse_request, &options) {
                 Ok(outcome) => {
                     debug!(
                         object_id = %browse_request.object_id,
@@ -184,7 +272,7 @@ async fn connection_manager_control(
         "GetCurrentConnectionInfo" => xml_response(soap::response(
             &request.service,
             &request.action,
-            "      <RcsID>0</RcsID>\n      <AVTransportID>0</AVTransportID>\n      <ProtocolInfo></ProtocolInfo>\n      <PeerConnectionManager></PeerConnectionManager>\n      <PeerConnectionID>-1</PeerConnectionID>\n      <Direction>Output</Direction>\n      <Status>OK</Status>",
+            "      <RcSID>0</RcSID>\n      <AVTransportID>0</AVTransportID>\n      <ProtocolInfo></ProtocolInfo>\n      <PeerConnectionManager></PeerConnectionManager>\n      <PeerConnectionID>-1</PeerConnectionID>\n      <Direction>Output</Direction>\n      <Status>OK</Status>",
         )),
         other => {
             warn!(action = %other, "nepodrzana ConnectionManager akcija");
@@ -224,7 +312,10 @@ async fn subtitle_by_name(
         catalog.get(&id).and_then(|node| node.subtitle.clone())
     };
     match path {
-        Some(path) => rustiio_http::serve_file(&path, &headers, method == Method::HEAD).await,
+        Some(path) => {
+            let duration = probe_duration(&state, &path).await;
+            rustiio_http::serve_file(&path, &headers, method == Method::HEAD, duration).await
+        }
         None => (StatusCode::NOT_FOUND, "no subtitle").into_response(),
     }
 }
@@ -237,10 +328,32 @@ async fn serve_node(state: &AppState, id: &str, headers: &HeaderMap, head_only: 
             _ => None,
         }
     };
-    match path {
-        Some(path) => rustiio_http::serve_file(&path, headers, head_only).await,
-        None => (StatusCode::NOT_FOUND, "no such object").into_response(),
+    let Some(path) = path else {
+        return (StatusCode::NOT_FOUND, "no such object").into_response();
+    };
+
+    // Ovdje se vidi tocno sto koji uredjaj trazi (korisno za nove TV profile).
+    debug!(
+        object_id = %id,
+        range = %header_str(headers, "range").unwrap_or_else(|| "-".to_string()),
+        time_seek = %header_str(headers, "timeseekrange.dlna.org").unwrap_or_else(|| "-".to_string()),
+        transfer_mode = %header_str(headers, "transfermode.dlna.org").unwrap_or_else(|| "-".to_string()),
+        device = %header_str(headers, "user-agent").unwrap_or_else(|| "-".to_string()),
+        "media zahtjev"
+    );
+
+    let duration = probe_duration(state, &path).await;
+    rustiio_http::serve_file(&path, headers, head_only, duration).await
+}
+
+/// Trajanje fajla preko ffprobe-a (blokirajuce, zato `spawn_blocking`).
+async fn probe_duration(state: &AppState, path: &FsPath) -> Option<u64> {
+    if !state.config.transcode.probe_duration {
+        return None;
     }
+    let probe = state.duration_probe.clone();
+    let owned: PathBuf = path.to_path_buf();
+    tokio::task::spawn_blocking(move || probe.duration_ms(&owned)).await.ok().flatten()
 }
 
 // --------------------------------------------------------------- REST i web
@@ -271,18 +384,20 @@ async fn api_status(State(state): State<AppState>) -> Response {
         "http_port": state.config.server.http_port,
         "ssdp": state.config.server.ssdp,
         "transcode_enabled": state.config.transcode.enabled,
+        "views": state.config.library.views,
         "uptime_secs": state.uptime_secs(),
         "update_id": catalog.update_id,
         "items": catalog.len(),
         "counts": counts,
         "roots": roots,
+        "subscriptions": state.gena.len(),
     }))
     .into_response()
 }
 
 async fn api_rescan(State(state): State<AppState>) -> Response {
     let count = state.rescan().await;
-    let update_id = state.catalog.read().await.update_id;
+    let update_id = state.update_id();
     axum::Json(json!({ "ok": true, "items": count, "update_id": update_id })).into_response()
 }
 
@@ -324,6 +439,7 @@ async fn index(State(state): State<AppState>) -> Response {
    <div class="kpi"><b>{items}</b><span class="muted">objekata u biblioteci</span></div>
    <div class="kpi"><b>{uptime}</b><span class="muted">sekundi rada</span></div>
    <div class="kpi"><b>{roots}</b><span class="muted">mapa</span></div>
+   <div class="kpi"><b>{subscriptions}</b><span class="muted">TV-a pretplaceno</span></div>
  </div>
  <div class="card">
    <b>Na TV-u:</b> otvori izvor <code>{friendly}</code> u DLNA/UPnP izborniku.<br>
@@ -342,6 +458,7 @@ async fn index(State(state): State<AppState>) -> Response {
         items = catalog.len(),
         uptime = state.uptime_secs(),
         roots = state.config.library.roots.len(),
+        subscriptions = state.gena.len(),
     );
     Html(page).into_response()
 }
@@ -364,7 +481,41 @@ fn static_response(body: &'static str) -> Response {
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
-/// SOAP fault ide s HTTP 500, kako UPnP spec trazi.
+fn empty_ok() -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .body(axum::body::Body::empty())
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// Uspjeh `SUBSCRIBE` — UPnP trazi `SID` i `TIMEOUT`, bez tijela.
+fn event_ok(sid: &str, timeout: &str) -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("SID", sid)
+        .header("TIMEOUT", timeout)
+        .header(header::CONTENT_LENGTH, "0")
+        .body(axum::body::Body::empty())
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// UPnP: `412 Precondition Failed` kad pretplata nije valjana.
+fn precondition_failed(reason: &str) -> Response {
+    debug!(reason = %reason, "SUBSCRIBE/UNSUBSCRIBE odbijen");
+    Response::builder()
+        .status(StatusCode::PRECONDITION_FAILED)
+        .body(axum::body::Body::empty())
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+fn method_not_allowed() -> Response {
+    Response::builder()
+        .status(StatusCode::METHOD_NOT_ALLOWED)
+        .body(axum::body::Body::empty())
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// SOAP fault ide s HTTP 500, kako UPnP spec traza.
 fn soap_fault_response(code: u32, description: &str) -> Response {
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -380,12 +531,6 @@ fn header_str(headers: &HeaderMap, name: &str) -> Option<String> {
 
 fn arg(args: &std::collections::HashMap<String, String>, name: &str) -> Option<String> {
     args.get(name).cloned()
-}
-
-fn uuid_like() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    format!("{nanos:032x}-{:04x}", std::process::id())
 }
 
 #[cfg(test)]
@@ -414,12 +559,118 @@ mod tests {
     }
 
     #[test]
-    fn uuid_like_is_unique_enough() {
-        assert_ne!(uuid_like(), uuid_like());
+    fn mime_helper_is_reachable() {
+        assert_eq!(rustiio_upnp::protocol::mime_for_ext("mkv"), "video/x-matroska");
     }
 
     #[test]
-    fn mime_helper_is_reachable() {
-        assert_eq!(rustiio_upnp::protocol::mime_for_ext("mkv"), "video/x-matroska");
+    fn event_body_follows_the_service() {
+        let state = state();
+        let cd = event_body(&state, gena::CONTENT_DIRECTORY);
+        assert!(cd.contains("SystemUpdateID"), "{cd}");
+        let cm = event_body(&state, gena::CONNECTION_MANAGER);
+        assert!(cm.contains("SourceProtocolInfo"), "{cm}");
+        assert!(!cm.contains("SystemUpdateID"), "{cm}");
+    }
+
+    #[tokio::test]
+    async fn subscribe_requires_callback_and_nt() {
+        let state = state();
+
+        // Bez icega -> 412
+        let response = eventing(
+            state.clone(),
+            gena::CONTENT_DIRECTORY,
+            Method::from_bytes(b"SUBSCRIBE").unwrap(),
+            HeaderMap::new(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::PRECONDITION_FAILED);
+
+        // Samo CALLBACK bez NT -> 412
+        let mut headers = HeaderMap::new();
+        headers.insert("callback", "<http://127.0.0.1:9/ev>".parse().unwrap());
+        let response = eventing(
+            state.clone(),
+            gena::CONTENT_DIRECTORY,
+            Method::from_bytes(b"SUBSCRIBE").unwrap(),
+            headers,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::PRECONDITION_FAILED);
+
+        // Valjano -> 200 + SID + TIMEOUT
+        let mut headers = HeaderMap::new();
+        headers.insert("callback", "<http://127.0.0.1:9/ev>".parse().unwrap());
+        headers.insert("nt", "upnp:event".parse().unwrap());
+        headers.insert("timeout", "Second-300".parse().unwrap());
+        let response = eventing(
+            state.clone(),
+            gena::CONTENT_DIRECTORY,
+            Method::from_bytes(b"SUBSCRIBE").unwrap(),
+            headers,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let sid = response.headers().get("sid").unwrap().to_str().unwrap().to_string();
+        assert!(sid.starts_with("uuid:rustiio-"));
+        assert_eq!(response.headers().get("timeout").unwrap(), "Second-300");
+        assert_eq!(state.gena.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn subscribe_with_sid_renews_and_unknown_sid_is_412() {
+        let state = state();
+        let subscription =
+            state.gena.subscribe(gena::CONTENT_DIRECTORY, vec!["http://127.0.0.1:9/ev".into()]);
+
+        let mut headers = HeaderMap::new();
+        headers.insert("sid", subscription.sid.parse().unwrap());
+        let response = eventing(
+            state.clone(),
+            gena::CONTENT_DIRECTORY,
+            Method::from_bytes(b"SUBSCRIBE").unwrap(),
+            headers,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers().get("sid").unwrap(), subscription.sid.as_str());
+
+        let mut headers = HeaderMap::new();
+        headers.insert("sid", "uuid:nepostojeci".parse().unwrap());
+        let response = eventing(
+            state.clone(),
+            gena::CONTENT_DIRECTORY,
+            Method::from_bytes(b"SUBSCRIBE").unwrap(),
+            headers,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::PRECONDITION_FAILED);
+    }
+
+    #[tokio::test]
+    async fn unsubscribe_removes_the_subscription() {
+        let state = state();
+        let subscription =
+            state.gena.subscribe(gena::CONTENT_DIRECTORY, vec!["http://127.0.0.1:9/ev".into()]);
+
+        let mut headers = HeaderMap::new();
+        headers.insert("sid", subscription.sid.parse().unwrap());
+        let response = eventing(
+            state.clone(),
+            gena::CONTENT_DIRECTORY,
+            Method::from_bytes(b"UNSUBSCRIBE").unwrap(),
+            headers,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(state.gena.is_empty());
+    }
+
+    #[tokio::test]
+    async fn other_methods_are_405() {
+        let state = state();
+        let response = eventing(state, gena::CONTENT_DIRECTORY, Method::POST, HeaderMap::new()).await;
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 }

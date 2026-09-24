@@ -95,6 +95,42 @@ impl Catalog {
         }
         out
     }
+
+    /// Svi objekti ispod roota (bez samog roota) — osnova za virtualne kategorije.
+    pub fn flatten(&self) -> Vec<Node> {
+        let mut out: Vec<Node> = Vec::new();
+        let mut stack: Vec<String> = vec!["0".to_string()];
+        while let Some(id) = stack.pop() {
+            let Some(node) = self.map.get(&id) else { continue };
+            for child in &node.children {
+                if let Some(child_node) = self.map.get(child) {
+                    out.push(child_node.clone());
+                    if child_node.is_container() {
+                        stack.push(child.clone());
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Svi objekti zadanih vrsta (npr. samo video), u dubinu.
+    pub fn of_kinds(&self, kinds: &[NodeKind]) -> Vec<Node> {
+        self.flatten().into_iter().filter(|node| kinds.contains(&node.kind)).collect()
+    }
+
+    /// Broj objekata zadanih vrsta — bez kloniranja (za `childCount` kategorija).
+    pub fn count_of_kinds(&self, kinds: &[NodeKind]) -> usize {
+        self.map.values().filter(|node| kinds.contains(&node.kind)).count()
+    }
+
+    /// Zadnjih `limit` objekata zadanih vrsta po vremenu izmjene ("Nedavno dodano").
+    pub fn recent(&self, kinds: &[NodeKind], limit: usize) -> Vec<Node> {
+        let mut items = self.of_kinds(kinds);
+        items.sort_by(|a, b| b.modified.cmp(&a.modified));
+        items.truncate(limit);
+        items
+    }
 }
 
 #[derive(Debug, Clone, Default)]

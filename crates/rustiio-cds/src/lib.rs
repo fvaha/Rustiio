@@ -4,5 +4,9 @@
 //! "koji objekt, koji filter, koji sort, koja stranica".
 
 pub mod browse;
+pub mod views;
 
-pub use browse::{BrowseOutcome, BrowseRequest, CdsError, MAX_RESULTS, browse, sort_capabilities};
+pub use browse::{
+    BrowseOptions, BrowseOutcome, BrowseRequest, CdsError, MAX_RESULTS, browse, sort_capabilities,
+};
+pub use views::View;
