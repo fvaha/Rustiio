@@ -14,6 +14,7 @@ rustiio-cds.workspace = true
 rustiio-http.workspace = true
 rustiio-library.workspace = true
 rustiio-profiles.workspace = true
+rustiio-ssdp.workspace = true
 rustiio-transcode.workspace = true
 rustiio-upnp.workspace = true
 anyhow.workspace = true
