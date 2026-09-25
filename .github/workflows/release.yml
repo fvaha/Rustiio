@@ -75,6 +75,17 @@ jobs:
           chmod +x ffmpeg-* ffprobe-* 2>/dev/null || true
           ls -la
 
+      # `rustiio-server` is a path dependency of the desktop app and embeds `web/dist` at
+      # compile time (rust-embed), so the UI must exist before the bundle is compiled.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Web UI
+        working-directory: web
+        run: npm ci && npm run build
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -27,5 +27,15 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      # `rustiio-server` embeds `web/dist` at compile time (rust-embed), so the UI has to
+      # be built before anything is compiled or tested — otherwise the crate does not build.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Web UI
+        working-directory: web
+        run: npm ci && npm run build
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --all
