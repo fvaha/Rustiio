@@ -76,7 +76,13 @@ impl<'a> PlaybackEngine<'a> {
         let info = self.media.get(&node.path)?;
         let extension =
             node.path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-        let decision = decide(&info, self.profile, &extension, node.subtitle.is_some(), self.hw);
+        let decision = decide(
+            &info,
+            self.profile,
+            &extension,
+            node.subtitles.iter().any(|staza| staza.is_text()),
+            self.hw,
+        );
 
         if let Ok(mut cache) = self.decisions.lock() {
             cache.insert(node.path.clone(), decision.clone());
@@ -148,7 +154,7 @@ mod tests {
             size: 1000,
             modified: None,
             children: Vec::new(),
-            subtitle: None,
+            subtitles: Vec::new(),
         }
     }
 

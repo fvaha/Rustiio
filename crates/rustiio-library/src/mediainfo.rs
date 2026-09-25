@@ -10,6 +10,8 @@ use std::process::Command;
 use std::sync::RwLock;
 
 use serde::{Deserialize, Serialize};
+
+use crate::subtitles::{self, Source, SubtitleTrack};
 use tracing::{debug, warn};
 
 /// Sve sto o jednom fajlu znamo.
@@ -25,6 +27,10 @@ pub struct MediaInfo {
     pub audio: Option<AudioStream>,
     pub audio_streams: Vec<AudioStream>,
     pub embedded_subtitles: usize,
+    /// Ugradjene staze titlova (jezik, naslov, forced/SDH) — bez njih TV prikazuje
+    /// `Language 1`, a ne `English`.
+    #[serde(default)]
+    pub subtitles: Vec<SubtitleTrack>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +93,7 @@ impl MediaInfo {
         let mut audio_streams = Vec::new();
         let mut video = None;
         let mut embedded_subtitles = 0;
+        let mut subtitles: Vec<SubtitleTrack> = Vec::new();
 
         for stream in &raw.streams {
             match stream.codec_type.as_deref() {
@@ -110,7 +117,21 @@ impl MediaInfo {
                     language: stream.tags.as_ref().and_then(|tags| tags.language.clone()),
                     bitrate_kbps: parse_number(stream.bit_rate.as_deref()),
                 }),
-                Some("subtitle") => embedded_subtitles += 1,
+                Some("subtitle") => {
+                    embedded_subtitles += 1;
+                    let codec = stream.codec_name.clone().unwrap_or_default();
+                    let label = stream.tags.as_ref().and_then(|tags| tags.title.clone());
+                    let oznaka = label.as_deref().unwrap_or_default().to_ascii_lowercase();
+                    subtitles.push(SubtitleTrack {
+                        source: Source::Embedded { index: stream.index.unwrap_or(0) },
+                        codec,
+                        language: stream.tags.as_ref().and_then(|tags| tags.language.clone()),
+                        sdh: oznaka.contains("sdh") || oznaka.contains("hearing"),
+                        label,
+                        forced: stream.disposition.as_ref().and_then(|d| d.forced).unwrap_or(0) == 1,
+                        default: stream.disposition.as_ref().and_then(|d| d.default).unwrap_or(0) == 1,
+                    });
+                }
                 _ => {}
             }
         }
@@ -138,6 +159,11 @@ impl MediaInfo {
             audio_streams,
             video,
             embedded_subtitles,
+            subtitles: {
+                let mut staze = subtitles;
+                subtitles::poredaj(&mut staze);
+                staze
+            },
         }
     }
 }
@@ -153,7 +179,7 @@ pub fn probe(path: &Path, ffprobe_path: &str) -> Option<MediaInfo> {
             "-show_format",
             "-show_streams",
             "-show_entries",
-            "stream=index,codec_type,codec_name,width,height,channels,bit_rate,profile,level,pix_fmt:stream_tags=language:format=format_name,duration,size,bit_rate",
+            "stream=index,codec_type,codec_name,width,height,channels,bit_rate,profile,level,pix_fmt:stream_tags=language,title:stream_disposition=default,forced:format=format_name,duration,size,bit_rate",
         ])
         .arg(path)
         .output();
@@ -284,11 +310,20 @@ struct FfprobeStream {
     level: Option<i32>,
     pix_fmt: Option<String>,
     tags: Option<FfprobeTags>,
+    disposition: Option<FfprobeDisposition>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct FfprobeTags {
     language: Option<String>,
+    title: Option<String>,
+}
+
+/// `default`/`forced` staze titla (`1` = postavljeno).
+#[derive(Debug, Default, Deserialize)]
+struct FfprobeDisposition {
+    default: Option<u8>,
+    forced: Option<u8>,
 }
 
 #[cfg(test)]
@@ -303,7 +338,8 @@ mod tests {
          "bit_rate": "640000", "tags": {"language": "eng"}},
         {"index": 2, "codec_name": "ac3", "codec_type": "audio", "channels": 2,
          "tags": {"language": "hrv"}},
-        {"index": 3, "codec_name": "subrip", "codec_type": "subtitle"}
+        {"index": 3, "codec_name": "subrip", "codec_type": "subtitle",
+         "tags": {"language": "hrv", "title": "Hrvatski"}, "disposition": {"default": 1}}
       ],
       "format": {"format_name": "matroska,webm", "duration": "5400.523000", "size": "3214567890", "bit_rate": "4760000"}
     }"#;
@@ -328,6 +364,14 @@ mod tests {
         assert_eq!(audio.channels, 6);
         assert_eq!(audio.language.as_deref(), Some("eng"));
         assert_eq!(info.embedded_subtitles, 1);
+        assert_eq!(info.subtitles.len(), 1);
+        assert_eq!(info.subtitles[0].display_name(), "Croatian", "jezik, ne 'Language 1'");
+        assert_eq!(
+            info.subtitles[0].serve_name("Lanterns.S01E06"),
+            "Lanterns.S01E06.hrv.srt",
+            "jezik iz ffprobe oznake ide u ime titla"
+        );
+        assert!(info.subtitles[0].default);
         assert_eq!(info.audio_channels(), 6);
         assert!(info.summary().contains("hevc 1920x1080"));
     }

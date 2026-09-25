@@ -124,7 +124,10 @@
             {/if}
           </div>
         </div>
-        {#if item.subtitle}<span class="tag">SRT</span>{/if}
+        <!-- Titlovi po jeziku: `English`, `Croatian (forced)` — nikad "Language 1". -->
+        {#each item.subtitles ?? [] as titl (titl.file)}
+          <span class="tag" title={titl.file}>{titl.name}</span>
+        {/each}
       </div>
     {/each}
   </div>
@@ -142,6 +145,14 @@
       <div class="row"><span class="grow sub">{selected.putanja}</span></div>
       <div class="row"><span class="grow sub">{t('library.filter_kind')}</span><span class="tag">{selected.kind}</span></div>
       <div class="row"><span class="grow sub">{t('library.size')}</span><span class="tag">{bytes(selected.size)}</span></div>
+      {#if (selected.subtitles ?? []).length}
+        <div class="row">
+          <span class="grow sub">{t('library.subtitles')}</span>
+          <span class="tag">
+            {selected.subtitles.map((titl) => titl.name).join(', ')}
+          </span>
+        </div>
+      {/if}
       <div class="row"><span class="grow sub">{t('library.added')}</span><span class="tag">{dateTime(selected.modified_ms)}</span></div>
       <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap">
         {#if selected.play}

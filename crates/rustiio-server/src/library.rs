@@ -4,7 +4,7 @@
 //! i nakon reskena. Zato id ne dodjeljuje skener (redni broj), nego baza (po putanji).
 
 use rustiio_library::{Catalog, Store};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 pub use rustiio_library::SyncSummary;
 
@@ -35,11 +35,11 @@ pub fn warm_probe_cache(store: &Store, probe: &rustiio_library::MediaProbe) -> u
     count
 }
 
-/// Dopuni dubinu boje u bazi za zapise upisane prije sheme 5.
+/// Dopuni dubinu boje i titlove u bazi za zapise upisane prije shema 5 i 7.
 ///
 /// Skener pamti kodek, ali ne i dubinu; bez nje 10-bit HEVC (`Main 10`) izgleda
 /// kao običan HEVC, odluka kaže „TV to može", a TV onda ne otvori fajl.
-pub fn backfill_bit_depth(store: &Store, probe: &rustiio_library::MediaProbe) -> usize {
+pub fn backfill_bit_depth(store: &Store, probe: &rustiio_library::MediaProbe, ffmpeg: &str) -> usize {
     let rows = match rustiio_library::store::items::media_without_bit_depth(store) {
         Ok(rows) => rows,
         Err(error) => {
@@ -57,12 +57,18 @@ pub fn backfill_bit_depth(store: &Store, probe: &rustiio_library::MediaProbe) ->
         // Keš je punjen iz baze — tamo dubine boje još nema, pa bi `probe` vratio
         // upravo taj prazan zapis i ffprobe se ne bi pokrenuo. Zato prvo zaboravi.
         probe.forget(&path);
-        let Some(info) = probe.probe(&path) else {
+        let Some(mut info) = probe.probe(&path) else {
             continue;
         };
-        if info.video.as_ref().and_then(|video| video.pix_fmt.as_ref()).is_none() {
-            continue;
+        // Ugradjeni titlovi cesto nemaju oznaku jezika (`Lanterns` je takav) — izvuci
+        // kratki uzorak i pogodi jezik, inace TV vidi `Language 1`.
+        let pogodjeno = rustiio_library::subtitles::fill_languages(&mut info.subtitles, &path, ffmpeg);
+        if pogodjeno > 0 {
+            debug!(putanja = %path.display(), pogodjeno, "jezik titlova pogodjen iz teksta");
         }
+        // Kes mora vidjeti isto sto i baza: DIDL se gradi iz kesa, pa bi bez ovoga
+        // uredjaj dobio "staza-4" umjesto "croatian" (dok se servis ne restartira).
+        probe.remember(&path, Some(info.clone()));
         if rustiio_library::store::items::update_media(store, id, &info, now).is_ok() {
             updated += 1;
         }
@@ -155,6 +161,7 @@ mod tests {
             }),
             audio_streams: Vec::new(),
             embedded_subtitles: 0,
+            subtitles: Vec::new(),
         };
         rustiio_library::store::items::update_media(&store, id, &info, Store::now()).expect("metapodaci");
 
@@ -170,9 +177,7 @@ mod tests {
         assert_eq!(video.pix_fmt.as_deref(), Some("yuv420p10le"));
         assert_eq!(video.profile.as_deref(), Some("Main 10"));
         assert!(
-            rustiio_library::store::items::media_without_bit_depth(&store)
-                .expect("upit")
-                .is_empty(),
+            rustiio_library::store::items::media_without_bit_depth(&store).expect("upit").is_empty(),
             "nema više zapisa bez dubine boje"
         );
 
@@ -189,5 +194,30 @@ mod tests {
         let mut only_agent = axum::http::HeaderMap::new();
         only_agent.insert(axum::http::header::USER_AGENT, "VLC/3.0".parse().unwrap());
         assert_eq!(device_key(&only_agent), "VLC/3.0");
+    }
+}
+
+/// Ugradjeni titlovi za DIDL: `Node.subtitles` nosi samo vanjske datoteke, a staze
+/// unutar kontejnera (i njihovi jezici) zive u probe kesu.
+pub struct EmbeddedSubtitles {
+    pub catalog: std::sync::Arc<tokio::sync::RwLock<rustiio_library::Catalog>>,
+    pub probe: std::sync::Arc<rustiio_library::MediaProbe>,
+}
+
+impl rustiio_cds::browse::SubtitleLookup for EmbeddedSubtitles {
+    fn embedded(&self, item_id: &str) -> Vec<rustiio_library::subtitles::SubtitleTrack> {
+        // `try_read`: DIDL se gradi u async handleru, a zakljucan katalog znaci samo
+        // da cemo titlove pokazati u sljedecem pregledu (nikad ne blokiramo TV).
+        let Ok(catalog) = self.catalog.try_read() else {
+            return Vec::new();
+        };
+        let Some(node) = catalog.get(item_id) else {
+            return Vec::new();
+        };
+        match self.probe.get(&node.path) {
+            Some(info) => info.subtitles,
+            // Kes nije pun (zapis nikad nije proban) — probaj sad, ffprobe je brz.
+            None => self.probe.probe(&node.path).map(|info| info.subtitles).unwrap_or_default(),
+        }
     }
 }

@@ -323,7 +323,7 @@ pub fn update_media(
     conn.execute(
         "UPDATE items SET duration_ms = ?2, width = ?3, height = ?4, video_codec = ?5,
                 audio_codec = ?6, audio_channels = ?7, bitrate = ?8, probed_at = ?9,
-                video_pix_fmt = ?10, video_profile = ?11
+                video_pix_fmt = ?10, video_profile = ?11, subtitles = ?12
          WHERE id = ?1",
         params![
             item_id,
@@ -337,6 +337,7 @@ pub fn update_media(
             now,
             info.video.as_ref().and_then(|video| video.pix_fmt.clone()),
             info.video.as_ref().and_then(|video| video.profile.clone()),
+            serde_json::to_string(&info.subtitles).ok(),
         ],
     )?;
     Ok(())
@@ -347,12 +348,12 @@ pub fn media_without_bit_depth(store: &Store) -> rusqlite::Result<Vec<(i64, Path
     let conn = store.conn();
     let mut statement = conn.prepare(
         "SELECT id, path FROM items
-         WHERE video_codec IS NOT NULL AND (video_pix_fmt IS NULL OR video_pix_fmt = '')
+         WHERE video_codec IS NOT NULL
+           AND ((video_pix_fmt IS NULL OR video_pix_fmt = '') OR subtitles IS NULL)
          ORDER BY id",
     )?;
-    let rows = statement.query_map([], |row| {
-        Ok((row.get::<_, i64>(0)?, PathBuf::from(row.get::<_, String>(1)?)))
-    })?;
+    let rows = statement
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, PathBuf::from(row.get::<_, String>(1)?))))?;
     rows.collect()
 }
 
@@ -363,7 +364,7 @@ pub fn media_for_probe(store: &Store) -> rusqlite::Result<Vec<(PathBuf, crate::m
     let conn = store.conn();
     let mut statement = conn.prepare(
         "SELECT path, duration_ms, width, height, video_codec, audio_codec, audio_channels, bitrate,
-                video_pix_fmt, video_profile
+                video_pix_fmt, video_profile, subtitles
          FROM items WHERE probed_at IS NOT NULL AND (video_codec IS NOT NULL OR audio_codec IS NOT NULL)",
     )?;
     let rows = statement.query_map([], |row| {
@@ -377,6 +378,12 @@ pub fn media_for_probe(store: &Store) -> rusqlite::Result<Vec<(PathBuf, crate::m
         let bitrate_kbps: Option<i64> = row.get(7)?;
         let pix_fmt: Option<String> = row.get(8)?;
         let video_profile: Option<String> = row.get(9)?;
+        // Ugradjene staze titlova iz baze: bez toga bi topli cache tvrdio da ih nema,
+        // pa se TV-u nikad ne bi ponudile (`Language 1` bi bio najbolje sto dobije).
+        let subtitles: Vec<crate::subtitles::SubtitleTrack> = row
+            .get::<_, Option<String>>(10)?
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default();
 
         let info = MediaInfo {
             // Kontejner se u bazi ne pamti po imenu — za odluku je mjerodavna
@@ -403,7 +410,8 @@ pub fn media_for_probe(store: &Store) -> rusqlite::Result<Vec<(PathBuf, crate::m
                 bitrate_kbps: None,
             }),
             audio_streams: Vec::new(),
-            embedded_subtitles: 0,
+            embedded_subtitles: subtitles.iter().filter(|staza| staza.path().is_none()).count(),
+            subtitles,
         };
         Ok((path, info))
     })?;

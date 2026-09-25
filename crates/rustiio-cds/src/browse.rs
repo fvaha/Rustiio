@@ -1,6 +1,7 @@
 //! `Browse` i `Search` nad katalogom, s pagingom, sortiranjem i DIDL izlazom.
 
 use rustiio_core::time::format_rfc3339;
+use rustiio_library::subtitles::SubtitleTrack;
 use rustiio_library::{Catalog, Node, NodeKind};
 use rustiio_upnp::didl::{self, Object, Resource};
 use rustiio_upnp::protocol;
@@ -58,6 +59,8 @@ pub struct BrowseOptions<'a> {
     pub playback: Option<&'a dyn PlaybackResolver>,
     /// Tko zna ima li objekt poster (`albumArtURI` u DIDL-u).
     pub art: Option<&'a dyn ArtLookup>,
+    /// Ugradjeni titlovi u kontejneru (jezik, `forced`, `SDH`).
+    pub subs: Option<&'a dyn SubtitleLookup>,
 }
 
 impl std::fmt::Debug for BrowseOptions<'_> {
@@ -86,6 +89,7 @@ impl Default for BrowseOptions<'_> {
             recent_limit: 20,
             playback: None,
             art: None,
+            subs: None,
         }
     }
 }
@@ -151,6 +155,12 @@ impl CdsError {
 ///
 /// CDS ne zna za bazu: server odgovori "ovaj id ima sliku" ili "nema".
 /// Ako nema, `albumArtURI` se **ne** ispisuje — TV-i loše reagiraju na URL koji 404-a.
+/// Ugradjeni titlovi (iz `ffprobe`) — vanjski su u `Node.subtitles`, a ovi dolaze iz
+/// probe kesa, pa DIDL mora pitati server.
+pub trait SubtitleLookup: Send + Sync {
+    fn embedded(&self, item_id: &str) -> Vec<SubtitleTrack>;
+}
+
 pub trait ArtLookup: Send + Sync {
     fn art_url(&self, item_id: &str) -> Option<String>;
 }
@@ -232,12 +242,7 @@ fn paginate(
 }
 
 fn view_object(view: View, catalog: &Catalog, options: &BrowseOptions<'_>) -> Object {
-    Object::container(
-        view.id(),
-        "0",
-        view.title(options.language),
-        view.count(catalog, options.recent_limit),
-    )
+    Object::container(view.id(), "0", view.title(options.language), view.count(catalog, options.recent_limit))
 }
 
 /// Pretvori cvor kataloga u DIDL objekt s resursima (i titlom, ako ga ima).
@@ -276,14 +281,21 @@ pub fn node_to_object(node: &Node, catalog: &Catalog, options: &BrowseOptions<'_
         resource = resource.with_size(size);
     }
 
-    if let Some(subtitle) = &node.subtitle {
-        let sub_name = escape_path_segment(
-            &subtitle.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
-        );
-        let sub_ext =
-            subtitle.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-        let sub_url = format!("{}/sub/{}/{sub_name}", options.base_url, node.id);
-        resource = resource.with_caption(&sub_url, &sub_ext);
+    // Titlovi: jezik je u **imenu** koje posluzujemo (`Film.en.srt`), pa ga svaki
+    // klijent vidi kao `English` — nema izmisljenih `Language 1`.
+    // Prva tekstualna staza ide i kao `sec:CaptionInfoEx` (Samsung cita samo taj oblik).
+    let video_stem = node.path.file_stem().map(|ime| ime.to_string_lossy().to_string()).unwrap_or_default();
+    let mut titlovi_urls: Vec<String> = Vec::new();
+    let mut sve: Vec<SubtitleTrack> = node.subtitles.clone();
+    if let Some(ugradjeni) = options.subs {
+        sve.extend(ugradjeni.embedded(&node.id));
+    }
+    rustiio_library::subtitles::poredaj(&mut sve);
+    let titlovi: Vec<&SubtitleTrack> = sve.iter().filter(|staza| staza.is_text()).collect();
+    if let Some(prva) = titlovi.first() {
+        let ime = escape_path_segment(&prva.serve_name(&video_stem));
+        let sub_url = format!("{}/sub/{}/{ime}", options.base_url, node.id);
+        resource = resource.with_caption(&sub_url, &prva.codec);
     }
 
     let mut object = Object::item(&node.id, &node.parent_id, &node.title, class).with_resource(resource);
@@ -296,17 +308,32 @@ pub fn node_to_object(node: &Node, catalog: &Catalog, options: &BrowseOptions<'_
     }
 
     // Titl ide i kao zaseban resurs — neki klijenti (Kodi, VLC) citaju samo taj oblik.
-    if let Some(subtitle) = &node.subtitle {
-        let sub_ext =
-            subtitle.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-        let sub_name = escape_path_segment(
-            &subtitle.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
-        );
-        let sub_url = format!("{}/sub/{}/{sub_name}", options.base_url, node.id);
-        let sub_info = protocol::guess_for_ext(&sub_ext);
+    // Svaki tekstualni titl je zaseban `res` (Kodi/VLC citaju samo taj oblik), a ime
+    // datoteke nosi jezik.
+    for staza in &titlovi {
+        let ime = escape_path_segment(&staza.serve_name(&video_stem));
+        let url = format!("{}/sub/{}/{ime}", options.base_url, node.id);
+        if titlovi_urls.contains(&url) {
+            // Isti jezik zna biti u dvije staze (npr. puna i skracena) — TV bi vidio
+            // dvije identicne stavke, a ruta ionako posluzuje prvu.
+            continue;
+        }
+        titlovi_urls.push(url.clone());
+        // Bitna je ekstenzija posluzenog imena: `srt` mora dati `text/srt`, inace
+        // uredjaj dobije `application/octet-stream` i titl ignorira.
+        let repak = staza.serve_name(&video_stem);
+        let nastavak = std::path::Path::new(&repak)
+            .extension()
+            .map(|ekstenzija| ekstenzija.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_else(|| "srt".to_string());
+        let informacije = protocol::guess_for_ext(&nastavak);
+        let velicina = staza
+            .path()
+            .and_then(|putanja| std::fs::metadata(putanja).ok())
+            .map(|meta| meta.len())
+            .unwrap_or(0);
         object = object.with_resource(
-            Resource::new(&sub_url, &sub_info.to_protocol_info())
-                .with_size(std::fs::metadata(subtitle).map(|m| m.len()).unwrap_or(0)),
+            Resource::new(&url, &informacije.to_protocol_info()).with_size(velicina),
         );
     }
 
@@ -391,6 +418,7 @@ mod tests {
             recent_limit: 20,
             playback: None,
             art: None,
+            subs: None,
         }
     }
 

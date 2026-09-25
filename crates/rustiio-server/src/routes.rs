@@ -10,8 +10,7 @@ use axum::body::Bytes;
 use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, get,
-    put, post};
+use axum::routing::{any, get, post, put};
 use serde_json::json;
 use tokio_util::io::ReaderStream;
 use tower_http::trace::TraceLayer;
@@ -237,6 +236,10 @@ async fn content_directory_control(
             );
             let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone())
                 .with_catalog(state.catalog.clone());
+            let ugradjeni = crate::library::EmbeddedSubtitles {
+                catalog: std::sync::Arc::clone(&state.catalog),
+                probe: std::sync::Arc::clone(&state.media_probe),
+            };
             let options = BrowseOptions {
                 base_url: &state.base_url,
                 max_results: MAX_RESULTS,
@@ -246,6 +249,7 @@ async fn content_directory_control(
                 recent_limit: state.config.library.recent_limit,
                 playback: Some(&engine),
                 art: Some(&art),
+                subs: Some(&ugradjeni),
             };
             match browse(&catalog, &browse_request, &options) {
                 Ok(outcome) => {
@@ -288,6 +292,10 @@ async fn content_directory_control(
             );
             let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone())
                 .with_catalog(state.catalog.clone());
+            let ugradjeni = crate::library::EmbeddedSubtitles {
+                catalog: std::sync::Arc::clone(&state.catalog),
+                probe: std::sync::Arc::clone(&state.media_probe),
+            };
             let options = BrowseOptions {
                 base_url: &state.base_url,
                 max_results: MAX_RESULTS,
@@ -297,6 +305,7 @@ async fn content_directory_control(
                 recent_limit: state.config.library.recent_limit,
                 playback: Some(&engine),
                 art: Some(&art),
+                subs: Some(&ugradjeni),
             };
             let criteria = rustiio_cds::parse_criteria(&search_request.criteria);
             // FTS upit nad lokalnim indeksom je sub-milisekundni; držimo ga u istoj dretvi
@@ -407,13 +416,46 @@ async fn media_by_name(
 
 async fn subtitle_by_name(
     State(state): State<AppState>,
-    Path((id, _filename)): Path<(String, String)>,
+    Path((id, filename)): Path<(String, String)>,
     headers: HeaderMap,
     method: Method,
 ) -> Response {
-    let path = {
+    // Trazimo stazu cije se posluzeno ime poklapa s trazenim (`Film.en.srt`,
+    // `Lanterns.S01E06.hrv.srt`). Ugradjeni titl se izvuce iz kontejnera u SRT.
+    let nadjeno = {
         let catalog = state.catalog.read().await;
-        catalog.get(&id).and_then(|node| node.subtitle.clone())
+        let cvor = catalog.get(&id).map(|node| (node.path.clone(), node.subtitles.clone()));
+        cvor.and_then(|(video, vanjski)| {
+            let stem =
+                video.file_stem().map(|ime| ime.to_string_lossy().to_string()).unwrap_or_default();
+            // Vanjski titlovi su u katalogu, ugradjeni u probe kesu (isto kao DIDL) —
+            // bez ovoga bi uredjaj dobio 404 za svaki titl iz kontejnera.
+            let ugradjeni = state
+                .media_probe
+                .get(&video)
+                .or_else(|| state.media_probe.probe(&video))
+                .map(|info| info.subtitles)
+                .unwrap_or_default();
+            let staza = vanjski
+                .iter()
+                .chain(ugradjeni.iter())
+                .find(|staza| staza.serve_name(&stem) == filename)
+                .cloned();
+            match staza {
+                Some(izbor) if izbor.path().is_some() => {
+                    izbor.path().map(|putanja| (izbor.clone(), putanja.to_path_buf()))
+                }
+                Some(izbor) => Some((izbor, video)),
+                None => None,
+            }
+        })
+    };
+    let path = match nadjeno {
+        Some((staza, video)) => match staza.path() {
+            Some(putanja) => Some(putanja.to_path_buf()),
+            None => izvuci_ugradjeni(&state, &staza, &video).await,
+        },
+        None => None,
     };
     match path {
         Some(path) => {
@@ -421,6 +463,49 @@ async fn subtitle_by_name(
             rustiio_http::serve_file(&path, &headers, method == Method::HEAD, duration).await
         }
         None => (StatusCode::NOT_FOUND, "no subtitle").into_response(),
+    }
+}
+
+/// Ugradjeni titl pretvori u SRT u privremenu mapu (isti posao se ne radi dvaput).
+async fn izvuci_ugradjeni(
+    state: &AppState,
+    staza: &rustiio_library::subtitles::SubtitleTrack,
+    video: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    let rustiio_library::subtitles::Source::Embedded { index } = staza.source else {
+        return None;
+    };
+    if !staza.is_text() {
+        // Slikovni titl (PGS/VobSub) se ne moze dati kao SRT.
+        warn!(titl = %staza.display_name(), "slikovni titl se ne moze posluziti kao srt");
+        return None;
+    }
+    let mapa = std::env::temp_dir().join("rustiio-titlovi");
+    std::fs::create_dir_all(&mapa).ok()?;
+    let izlaz = mapa.join(format!("{}-{index}.srt", staza.serve_name("izvucen")));
+    if izlaz.metadata().map(|meta| meta.len() > 0).unwrap_or(false) {
+        return Some(izlaz);
+    }
+    let ishod = tokio::process::Command::new(state.sessions.ffmpeg_path())
+        .args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i"])
+        .arg(video)
+        .args(["-map", &format!("0:{index}"), "-f", "srt"])
+        .arg(&izlaz)
+        .output()
+        .await;
+    match ishod {
+        Ok(_) if izlaz.metadata().map(|meta| meta.len() > 0).unwrap_or(false) => {
+            debug!(putanja = %izlaz.display(), "ugradjeni titl izvucen");
+            Some(izlaz)
+        }
+        Ok(izlaz_procesa) => {
+            warn!(greska = %String::from_utf8_lossy(&izlaz_procesa.stderr), "titl se nije izvukao");
+            None
+        }
+        Err(greska) => {
+            warn!(%greska, "ffmpeg za titl nije pokrenut");
+            None
+        }
     }
 }
 
@@ -564,7 +649,7 @@ async fn serve_ffmpeg(
         decision,
         ffmpeg_path: state.sessions.ffmpeg_path(),
         start_at_ms: start_at,
-        subtitle: node.subtitle.as_deref(),
+        subtitle: node.subtitles.iter().find(|staza| staza.is_text()).and_then(|staza| staza.path()),
     };
 
     if head_only {
@@ -647,18 +732,15 @@ async fn profile_for(state: &AppState, headers: &HeaderMap, peer: Option<SocketA
 
     // Izričit izbor korisnika nadjačava automatsko prepoznavanje: TV uvijek
     // dobiva profil koji mu je dodijeljen, bez obzira na User-Agent.
-    let izbor = rustiio_library::store::devices::profile_choice(&state.store, &identity.key())
-        .ok()
-        .flatten();
+    let izbor = rustiio_library::store::devices::profile_choice(&state.store, &identity.key()).ok().flatten();
     let (profile, reasons) = {
         let profiles = state.profiles.read().await;
         let odabran =
             izbor.as_deref().and_then(|id| profiles.all().iter().find(|item| item.id == id).cloned());
         match odabran {
-            Some(profile) => (
-                profile.clone(),
-                vec![format!("izbor korisnika: {}", izbor.clone().unwrap_or_default())],
-            ),
+            Some(profile) => {
+                (profile.clone(), vec![format!("izbor korisnika: {}", izbor.clone().unwrap_or_default())])
+            }
             None => {
                 let outcome = profiles.identify(&identity);
                 (outcome.profile.clone(), outcome.reasons.clone())
@@ -875,8 +957,7 @@ async fn api_profile_delete(State(state): State<AppState>, Path(id): Path<String
     let (postoji, ugradjen) = {
         let profiles = state.profiles.read().await;
         let postoji = profiles.all().iter().any(|profile| profile.id == id);
-        let ugradjen =
-            rustiio_profiles::builtin::load().all().iter().any(|profile| profile.id == id);
+        let ugradjen = rustiio_profiles::builtin::load().all().iter().any(|profile| profile.id == id);
         (postoji, ugradjen)
     };
     if !postoji {
@@ -939,8 +1020,7 @@ async fn api_device_profile(
         }
     }
 
-    match rustiio_library::store::devices::set_profile_choice(&state.store, &telo.key, &telo.profile_id)
-    {
+    match rustiio_library::store::devices::set_profile_choice(&state.store, &telo.key, &telo.profile_id) {
         Ok(()) => {
             info!(device = %telo.key, profile = %telo.profile_id, "profil uredjaja postavljen");
             axum::Json(json!({ "ok": true, "key": telo.key, "profile": telo.profile_id })).into_response()
@@ -1699,10 +1779,7 @@ async fn api_device_delete(
 ) -> Response {
     let kljuc = zahtjev.key.trim();
     if kljuc.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            axum::Json(json!({"greska": "nedostaje ključ uređaja"})),
-        )
+        return (StatusCode::BAD_REQUEST, axum::Json(json!({"greska": "nedostaje ključ uređaja"})))
             .into_response();
     }
     match rustiio_library::store::devices::delete(&state.store, kljuc) {
@@ -1713,10 +1790,7 @@ async fn api_device_delete(
         }
         Err(error) => {
             warn!(error = %error, key = %kljuc, "uredjaj nije obrisan");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(json!({"greska": error.to_string()})),
-            )
+            (StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"greska": error.to_string()})))
                 .into_response()
         }
     }

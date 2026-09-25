@@ -7,7 +7,14 @@
 use rusqlite::Connection;
 
 /// Verzija sheme; raste sa svakom izmjenom tablica (`PRAGMA user_version`).
-pub const VERSION: i32 = 6;
+pub const VERSION: i32 = 7;
+
+/// v6 → v7: staze titlova iz kontejnera (`[{index, codec, language, label, forced…}]`).
+/// `NULL` znaci "nije probano", `[]` znaci "probano, titlova nema" — po tome dopuna
+/// zna sto jos treba probati.
+const MIGRATION_V7: &str = r#"
+ALTER TABLE items ADD COLUMN subtitles TEXT;
+"#;
 
 /// v1 → v2: dva stupca za poster (datoteka u kešu + odakle je došao).
 const MIGRATION_V2: &str = r#"
@@ -176,6 +183,10 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 
     if current < 6 {
         conn.execute_batch(MIGRATION_V6)?;
+    }
+
+    if current < 7 {
+        conn.execute_batch(MIGRATION_V7)?;
     }
 
     conn.pragma_update(None, "user_version", VERSION)?;

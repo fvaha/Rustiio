@@ -153,7 +153,7 @@ pub fn arrange_video(catalog: &mut Catalog, root_id: &str, pruni_prazne: bool) -
                 size: 0,
                 modified: None,
                 children: sorted,
-                subtitle: None,
+                subtitles: Vec::new(),
             });
             summary.seasons += 1;
         }
@@ -168,7 +168,7 @@ pub fn arrange_video(catalog: &mut Catalog, root_id: &str, pruni_prazne: bool) -
             size: 0,
             modified: None,
             children: seasons,
-            subtitle: None,
+            subtitles: Vec::new(),
         });
         summary.series += 1;
         summary.episodes += group.seasons.values().map(|episodes| episodes.len()).sum::<usize>();

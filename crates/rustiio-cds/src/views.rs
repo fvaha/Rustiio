@@ -24,14 +24,8 @@ pub enum View {
 }
 
 /// Sve kategorije koje se mogu izabrati (redoslijed u Postavkama).
-pub const AVAILABLE: [View; 6] = [
-    View::Movies,
-    View::Series,
-    View::Video,
-    View::Recent,
-    View::Audio,
-    View::Image,
-];
+pub const AVAILABLE: [View; 6] =
+    [View::Movies, View::Series, View::Video, View::Recent, View::Audio, View::Image];
 
 /// Zadano kad `library.view_list` ne kaže drugačije: filmovi i serije.
 pub const DEFAULT_LIST: [View; 2] = [View::Movies, View::Series];
@@ -140,10 +134,7 @@ impl View {
 
     /// Pozicija u popisu kategorija (za sortiranje na vrhu stabla).
     pub fn position(self) -> usize {
-        AVAILABLE
-            .iter()
-            .position(|view| *view == self)
-            .unwrap_or(usize::MAX)
+        AVAILABLE.iter().position(|view| *view == self).unwrap_or(usize::MAX)
     }
 
     /// Sinteticni cvor (nije na disku) — koristi se za DIDL i za sortiranje.
@@ -157,7 +148,7 @@ impl View {
             size: 0,
             modified: None,
             children: Vec::new(),
-            subtitle: None,
+            subtitles: Vec::new(),
         }
     }
 
@@ -183,19 +174,13 @@ pub fn list(names: &[String]) -> Vec<View> {
     let mut izabrane: Vec<View> = Vec::new();
     for name in names {
         let kljuc = name.trim().trim_start_matches("v:").to_ascii_lowercase();
-        if let Some(view) = AVAILABLE
-            .iter()
-            .find(|view| view.name() == kljuc || view.id() == name.trim())
+        if let Some(view) = AVAILABLE.iter().find(|view| view.name() == kljuc || view.id() == name.trim())
             && !izabrane.contains(view)
         {
             izabrane.push(*view);
         }
     }
-    if izabrane.is_empty() {
-        DEFAULT_LIST.to_vec()
-    } else {
-        izabrane
-    }
+    if izabrane.is_empty() { DEFAULT_LIST.to_vec() } else { izabrane }
 }
 
 /// Je li cvor (ili neki predak) izmisljena serija/sezona (`s:…`).
@@ -281,10 +266,8 @@ mod tests {
 
     #[test]
     fn movies_and_series_split_episodes_from_films() {
-        let (dir, mut catalog) = catalog(
-            "podjela",
-            &[("Film.mkv", 10), ("podmapa/S01E01.mkv", 10), ("podmapa/S01E02.mkv", 10)],
-        );
+        let (dir, mut catalog) =
+            catalog("podjela", &[("Film.mkv", 10), ("podmapa/S01E01.mkv", 10), ("podmapa/S01E02.mkv", 10)]);
         let korijen = catalog.top_level().first().map(|node| node.id.clone()).expect("korijen");
         rustiio_library::grouping::arrange_video(&mut catalog, &korijen, false);
         let filmovi = View::Movies.items(&catalog, 20);

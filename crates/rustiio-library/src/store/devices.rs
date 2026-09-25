@@ -96,9 +96,7 @@ pub fn delete(store: &Store, key: &str) -> rusqlite::Result<usize> {
 pub fn profile_choice(store: &Store, key: &str) -> rusqlite::Result<Option<String>> {
     let conn = store.conn();
     let choice: Option<String> = conn
-        .query_row("SELECT profile_choice FROM devices WHERE key = ?1", params![key], |row| {
-            row.get(0)
-        })
+        .query_row("SELECT profile_choice FROM devices WHERE key = ?1", params![key], |row| row.get(0))
         .map(Some)
         .or_else(|error| match error {
             rusqlite::Error::QueryReturnedNoRows => Ok(None),

@@ -12,6 +12,7 @@ pub mod probe;
 pub mod scan;
 pub mod series;
 pub mod store;
+pub mod subtitles;
 pub mod watch;
 
 pub use mediainfo::{AudioStream, MediaInfo, MediaProbe, VideoStream, probe as probe_media};

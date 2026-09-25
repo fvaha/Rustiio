@@ -1,6 +1,7 @@
 //! Skeniranje mapa: rekurzivno citanje, klasifikacija po ekstenziji i
 //! povezivanje titlova s filmom (`Film.mkv` + `Film.srt`).
 
+use crate::subtitles::{self, SubtitleTrack};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -32,8 +33,9 @@ pub struct Node {
     pub size: u64,
     pub modified: Option<SystemTime>,
     pub children: Vec<String>,
-    /// `.srt`/`.vtt` uz ovaj video, ako postoji.
-    pub subtitle: Option<PathBuf>,
+    /// Svi titlovi za ovaj video: vanjske datoteke (`Film.srt`, `Film.en.srt`,
+    /// `Subs/Film.hrv.forced.srt`) s jezikom i oznakama.
+    pub subtitles: Vec<SubtitleTrack>,
 }
 
 impl Node {
@@ -233,7 +235,7 @@ pub fn scan(options: &ScanOptions) -> Catalog {
             size: 0,
             modified: None,
             children,
-            subtitle: None,
+            subtitles: Vec::new(),
         });
         // Slaganje ide nakon umetanja korijena: serije u sezone i epizode, filmovi po abecedi.
         crate::grouping::arrange(&mut catalog, &id, root.kind);
@@ -249,7 +251,7 @@ pub fn scan(options: &ScanOptions) -> Catalog {
         size: 0,
         modified: None,
         children: root_children,
-        subtitle: None,
+        subtitles: Vec::new(),
     });
     catalog.update_id = catalog.update_id.wrapping_add(1);
     catalog
@@ -300,18 +302,19 @@ fn scan_dir(
             size: 0,
             modified: None,
             children,
-            subtitle: None,
+            subtitles: Vec::new(),
         });
         ids.push(id);
     }
 
-    // Titlovi se prvo popisu, pa se lijepе na video s istim imenom.
-    let mut subtitles: HashMap<String, PathBuf> = HashMap::new();
-    for file in &files {
-        if is_subtitle(file) {
-            subtitles.insert(stem_lower(file), file.clone());
-        }
-    }
+    // Titlovi se prvo popisu (i iz `Subs`/`Subtitles` podmape), pa se lijepе na video
+    // po imenu — uz jezik i oznake iz imena datoteke.
+    let titlovi: Vec<PathBuf> = files
+        .iter()
+        .filter(|file| subtitles::is_subtitle_file(file))
+        .cloned()
+        .chain(podmapa_titlova(&dir).into_iter().filter(|file| subtitles::is_subtitle_file(file)))
+        .collect();
 
     for file in files {
         let ext = extension_lower(&file);
@@ -337,7 +340,14 @@ fn scan_dir(
             size: meta.as_ref().map(|m| m.len()).unwrap_or(0),
             modified: meta.as_ref().and_then(|m| m.modified().ok()),
             children: Vec::new(),
-            subtitle: subtitles.get(&stem_lower(&file)).cloned(),
+            subtitles: {
+                let mut staze: Vec<SubtitleTrack> = titlovi
+                    .iter()
+                    .filter_map(|titl| subtitles::external_track(&stem_lower(&file), titl))
+                    .collect();
+                subtitles::poredaj(&mut staze);
+                staze
+            },
         });
         ids.push(id);
     }
@@ -391,6 +401,18 @@ fn extension_lower(path: &Path) -> String {
 
 fn stem_of(path: &Path) -> String {
     path.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+}
+
+/// Titlovi iz `Subs`/`Subtitles`/`subs` podmape (isti naziv kao video).
+fn podmapa_titlova(dir: &std::path::Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for ime in ["Subs", "Subtitles", "subtitles", "subs", "Sub"] {
+        let mapa = dir.join(ime);
+        if let Ok(citac) = fs::read_dir(&mapa) {
+            out.extend(citac.filter_map(|stavka| stavka.ok()).map(|stavka| stavka.path()));
+        }
+    }
+    out
 }
 
 fn stem_lower(path: &Path) -> String {
@@ -497,8 +519,11 @@ mod tests {
         let catalog = scan(&options(&tree.dir));
         let movies = catalog.children("1");
         assert_eq!(movies.len(), 1, "titl se ne prikazuje kao zaseban objekt");
-        let subtitle = movies[0].subtitle.as_ref().expect("titl spojen");
-        assert!(subtitle.to_string_lossy().ends_with("Film.srt"));
+        let subtitle = movies[0].subtitles.first().expect("titl spojen");
+        assert!(
+            subtitle.path().expect("vanjski titl").to_string_lossy().ends_with("Film.srt"),
+            "titl ide uz video"
+        );
     }
 
     #[test]

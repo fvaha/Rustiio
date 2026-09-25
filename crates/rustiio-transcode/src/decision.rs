@@ -53,6 +53,8 @@ pub struct Decision {
     /// širini, ne samo po visini).
     pub max_width: Option<u32>,
     pub max_height: Option<u32>,
+    /// Velicina izvora — skaliranje racunamo sami, bez izraza u filteru.
+    pub source_size: Option<(u32, u32)>,
     /// Audio encoder; `None` = kopiraj.
     pub audio_encoder: Option<String>,
     pub audio_channels: Option<u8>,
@@ -116,7 +118,20 @@ pub fn decide(
     } else {
         let video = !video_ok;
         // Nijemi film nema sto re-enkodirati (`audio_ok` je tada `true`).
-        let audio = !audio_ok;
+        let mut audio = !audio_ok;
+
+        // Serviio svoj Samsung profil rjesava tako da uz transcode videa uvijek ide i
+        // AC-3 audio (tamo `targetACodec="ac3"`, 192 kb/s, 2 kanala). Samsung pusti
+        // MPEG-TS s AC-3, ali ne s AAC-om ni DD+ u kontejneru koji mu sami miksamo.
+        if video
+            && !audio
+            && media.audio.as_ref().is_some_and(|zvuk| !zvuk.codec.is_empty())
+            && profile.transcode.container == "mpegts"
+            && profile.transcode.audio_codec == "ac3"
+        {
+            audio = true;
+            reasons.push("uz transcode videa ide AC-3 audio (MPEG-TS s AAC/DD+ TV ne pusti)".to_string());
+        }
 
         if !video && !audio {
             // Nista se ne mora re-enkodirati — samo kontejner smeta. Profil koji ne
@@ -147,13 +162,15 @@ pub fn decide(
         );
     }
 
-    match mode {
+    let mut odluka = match mode {
         PlaybackMode::Direct => direct_decision(profile, &ext, media, reasons, burn_subtitles, hw),
         PlaybackMode::Remux => remux_decision(profile, reasons, hw, media),
         PlaybackMode::Transcode { video, audio } => {
             transcode_decision(profile, reasons, burn_subtitles, hw, video, audio)
         }
-    }
+    };
+    odluka.source_size = media.video.as_ref().map(|video| (video.width, video.height));
+    odluka
 }
 
 /// Remux: samo kontejner, `-c copy`. Nema PN-a (stream nije originalni fajl).
@@ -171,6 +188,7 @@ fn remux_decision(profile: &Profile, reasons: Vec<String>, hw: &HwSupport, media
         container: container.to_string(),
         video_encoder: None,
         video_bitrate_kbps: media.video.as_ref().and_then(|video| video.bitrate_kbps),
+        source_size: None,
         max_width: None,
         max_height: None,
         audio_encoder: None,
@@ -207,6 +225,7 @@ fn direct_decision(
         container: ext.to_string(),
         video_encoder: None,
         video_bitrate_kbps: media.bitrate_kbps,
+        source_size: None,
         max_width: None,
         max_height: None,
         audio_encoder: None,
@@ -263,6 +282,8 @@ fn transcode_decision(
 
     Decision {
         mode: PlaybackMode::Transcode { video, audio },
+        // Stvarnu velicinu izvora upisuje `decide` — skaliranje racuna iz nje.
+        source_size: None,
         reasons,
         protocol_info: info.to_protocol_info(),
         mime: mime.to_string(),
@@ -414,6 +435,7 @@ mod tests {
             }),
             audio_streams: Vec::new(),
             embedded_subtitles: 0,
+            subtitles: Vec::new(),
         }
     }
 
@@ -433,10 +455,11 @@ mod tests {
         let decision = decide(&deset, &profile("samsung-tv"), "mkv", false, &hw_soft());
         assert_eq!(
             decision.mode,
-            PlaybackMode::Transcode { video: true, audio: false },
-            "10-bit HEVC se mora prekodirati: {:?}",
+            PlaybackMode::Transcode { video: true, audio: true },
+            "10-bit HEVC se mora prekodirati (uz AC-3 audio): {:?}",
             decision.reasons
         );
+        assert_eq!(decision.audio_encoder.as_deref(), Some("ac3"));
         assert!(
             decision.reasons.iter().any(|reason| reason.contains("10-bit")),
             "razlog mora reci da je 10-bit: {:?}",
@@ -567,13 +590,25 @@ mod tests {
     }
 
     #[test]
+    fn video_transcode_also_makes_ac3_audio() {
+        // Samsung pusta TS s AC-3; eac3 (DD+) mu je u tom kontejneru problem iako ga
+        // profil inace podrzava, pa uz transcode videa ide i AC-3.
+        let deset = media_10bit("hevc", 1920, 1080, "eac3", 6);
+        let decision = decide(&deset, &profile("samsung-tv"), "mkv", true, &hw_soft());
+        assert!(matches!(decision.mode, PlaybackMode::Transcode { video: true, audio: true }));
+        assert_eq!(decision.audio_encoder.as_deref(), Some("ac3"));
+        assert_eq!(decision.audio_channels, Some(2));
+    }
+
+    #[test]
     fn audio_only_flac_on_limited_tv_gets_audio_transcode() {
         let mut music = media("", 0, 0, "flac", 2);
         music.video = None;
         music.audio_streams = music.audio.clone().into_iter().collect();
         let decision = decide(&music, &profile("generic"), "flac", false, &hw_soft());
         assert!(matches!(decision.mode, PlaybackMode::Transcode { video: false, audio: true }));
-        assert_eq!(decision.audio_encoder.as_deref(), Some("aac"));
+        // Ciljni audio dolazi iz profila: Samsung traži AC-3 u TS-u (Serviio isto).
+        assert_eq!(decision.audio_encoder.as_deref(), Some("ac3"));
         assert!(decision.video_encoder.is_none() || decision.video_encoder.as_deref() == Some("libx264"));
     }
 

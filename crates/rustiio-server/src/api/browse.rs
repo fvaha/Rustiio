@@ -104,6 +104,7 @@ async fn api_item(State(state): State<AppState>, Path(id): Path<String>) -> Resp
 fn project(node: &Node, art: &dyn ArtLookup, state: &AppState) -> Value {
     let container = node.is_container();
     let path = node.path.display().to_string();
+    let stem = node.path.file_stem().map(|ime| ime.to_string_lossy().to_string()).unwrap_or_default();
     json!({
         "id": node.id,
         "title": node.title,
@@ -114,7 +115,23 @@ fn project(node: &Node, art: &dyn ArtLookup, state: &AppState) -> Value {
         "modified_ms": node.modified.and_then(|time| {
             time.duration_since(std::time::UNIX_EPOCH).ok().map(|since| since.as_millis())
         }),
-        "subtitle": node.subtitle.as_ref().map(|sub| sub.file_name().unwrap_or_default().to_string_lossy().to_string()),
+        // Titlovi s imenima jezika (`English`, `Croatian (forced)`) — u sucelju se vidi
+        // sto uredjaj dobiva, bez `Language 1`.
+        "subtitles": node
+            .subtitles
+            .iter()
+            .map(|staza| {
+                serde_json::json!({
+                    "name": staza.display_name(),
+                    "file": staza.serve_name(&stem),
+                    "language": staza.language,
+                    "embedded": staza.path().is_none(),
+                    "forced": staza.forced,
+                    "sdh": staza.sdh,
+                    "text": staza.is_text(),
+                })
+            })
+            .collect::<Vec<_>>(),
         "poster": art.art_url(&node.id),
         "play": (!container).then(|| {
             let name = urlencode(&node.file_name());

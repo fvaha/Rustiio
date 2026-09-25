@@ -71,6 +71,12 @@ pub fn build_args(request: &StartRequest<'_>) -> Vec<String> {
                 if decision.threads > 0 && hwaccel::HwAccel::from_encoder(encoder) == hwaccel::HwAccel::None {
                     push(&mut args, &["-threads", &decision.threads.to_string()]);
                 }
+                // Samsung (Serviio to izričito rješava u svom profilu): H.264 mora biti
+                // High/Main **do levela 4.1**. Bez ovoga NVENC sam izabere npr. 5.1 i TV
+                // prikaže krug bez slike — a ne prijavi grešku.
+                if encoder.contains("h264") {
+                    push(&mut args, &["-profile:v", "high", "-level", "4.1"]);
+                }
                 args.extend(hwaccel::encoder_args(
                     decision.hw,
                     decision.video_bitrate_kbps.unwrap_or(0),
@@ -101,7 +107,11 @@ pub fn build_args(request: &StartRequest<'_>) -> Vec<String> {
 
     match decision.container.as_str() {
         "mp4" => push(&mut args, &["-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4"]),
-        _ => push(&mut args, &["-f", "mpegts", "-muxdelay", "0", "-muxpreload", "0"]),
+        // `+resend_headers`: TV se zna priključiti u toku pa traži PAT/PMT ispočetka.
+        _ => push(
+            &mut args,
+            &["-f", "mpegts", "-mpegts_flags", "+resend_headers", "-muxdelay", "0", "-muxpreload", "0"],
+        ),
     }
 
     // MPEG-TS bez ovoga zna dati "non monotonically increasing dts" na seeku.
@@ -111,6 +121,25 @@ pub fn build_args(request: &StartRequest<'_>) -> Vec<String> {
 }
 
 /// Skaliranje i/ili upecavanje titla — jedan `-vf` lanac.
+/// Velicina na koju se izvor svodi (cuva omjer, parne dimenzije, nikad ne povecava).
+/// `None` znaci da ostaje kako je.
+fn ciljna_velicina(
+    izvor: Option<(u32, u32)>,
+    max_sirina: Option<u32>,
+    max_visina: Option<u32>,
+) -> Option<(u32, u32)> {
+    let (sirina, visina) = izvor?;
+    if sirina == 0 || visina == 0 {
+        return None;
+    }
+    let zeljena_sirina = max_sirina.unwrap_or(sirina) as f64;
+    let zeljena_visina = max_visina.unwrap_or(visina) as f64;
+    let faktor = (zeljena_sirina / f64::from(sirina)).min(zeljena_visina / f64::from(visina)).min(1.0);
+    let parno = |vrijednost: f64| ((vrijednost as u32) / 2 * 2).max(2);
+    let (nova_sirina, nova_visina) = (parno(f64::from(sirina) * faktor), parno(f64::from(visina) * faktor));
+    if (nova_sirina, nova_visina) == (sirina, visina) { None } else { Some((nova_sirina, nova_visina)) }
+}
+
 fn video_filters(request: &StartRequest<'_>) -> Option<String> {
     let decision = request.decision;
     let mut filters: Vec<String> = Vec::new();
@@ -119,13 +148,10 @@ fn video_filters(request: &StartRequest<'_>) -> Option<String> {
     // 2160 širine ako se gleda samo visina, a TV takav okvir odbije.
     let max_sirina = decision.max_width.filter(|value| *value > 0);
     let max_visina = decision.max_height.filter(|value| *value > 0);
-    match (max_sirina, max_visina) {
-        (Some(sirina), Some(visina)) => filters.push(format!(
-            "scale='min({sirina},iw)':'min({visina},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2"
-        )),
-        (None, Some(visina)) => filters.push(format!("scale=-2:'min({visina},ih)'")),
-        (Some(sirina), None) => filters.push(format!("scale='min({sirina},iw)':-2")),
-        (None, None) => {}
+    if let Some((sirina, visina)) = ciljna_velicina(decision.source_size, max_sirina, max_visina) {
+        // Brojevi, ne izrazi: `scale='min(1920,iw)':...` ffmpeg odbije s
+        // "Invalid argument" (EINVAL) — ne napise ni bajt, a TV vrti krug.
+        filters.push(format!("scale={sirina}:{visina}"));
     }
     if decision.burn_subtitles {
         if let Some(subtitle) = request.subtitle {
@@ -140,9 +166,7 @@ fn video_filters(request: &StartRequest<'_>) -> Option<String> {
     // (`hevc Main 10`, `yuv420p10le`) inače obori enkoder s „10 bit encode not
     // supported": ffmpeg ne napiše ni bajt, a TV prijavi grešku. VAAPI već ima svoj
     // `format=nv12` (isto 8-bit).
-    if decision.video_encoder.is_some()
-        && !filters.iter().any(|filter| filter.contains("hwupload"))
-    {
+    if decision.video_encoder.is_some() && !filters.iter().any(|filter| filter.contains("hwupload")) {
         filters.push("format=yuv420p".to_string());
     }
 
@@ -196,6 +220,7 @@ mod tests {
             container: container.to_string(),
             video_encoder: encoder.map(|value| value.to_string()),
             video_bitrate_kbps: Some(8000),
+            source_size: Some((1920, 1080)),
             max_width: None,
             max_height: None,
             audio_encoder: Some("aac".to_string()),
@@ -240,6 +265,23 @@ mod tests {
     }
 
     #[test]
+    fn h264_target_pins_profile_and_level_for_samsung() {
+        // Serviio u Samsung profilu rješava upravo ovo: HIGH/MAIN > level 4.1 TV
+        // ne pušta (vrti krug). Zato profil i level moraju biti zadani.
+        let decision = decision(
+            PlaybackMode::Transcode { video: true, audio: true },
+            "mpegts",
+            Some("h264_nvenc"),
+            HwAccel::Nvenc,
+        );
+        let input = PathBuf::from("/media/lanterns.mkv");
+        let joined = build_args(&request(&decision, "mkv", &input, None)).join(" ");
+        assert!(joined.contains("-profile:v high"), "{joined}");
+        assert!(joined.contains("-level 4.1"), "{joined}");
+        assert!(joined.contains("-mpegts_flags +resend_headers"), "{joined}");
+    }
+
+    #[test]
     fn ten_bit_source_gets_eight_bit_output_and_width_cap() {
         // Lanterns (hevc Main 10, 2160x1080) je obarao h264_nvenc i TV je dobio 0
         // bajtova; uz to je ostajao preširok za profil (1920x1080).
@@ -249,15 +291,15 @@ mod tests {
             Some("h264_nvenc"),
             HwAccel::Nvenc,
         );
+        decision.source_size = Some((2160, 1080));
         decision.max_width = Some(1920);
         decision.max_height = Some(1080);
         let input = PathBuf::from("/media/lanterns.mkv");
         let joined = build_args(&request(&decision, "mkv", &input, None)).join(" ");
 
         assert!(joined.contains("format=yuv420p"), "10-bit ide u 8-bit: {joined}");
-        assert!(joined.contains("min(1920,iw)"), "širina se reže: {joined}");
-        assert!(joined.contains("min(1080,ih)"), "visina se reže: {joined}");
-        assert!(joined.contains("force_divisible_by=2"), "parne dimenzije: {joined}");
+        // Brojevi, ne izrazi: 2160x1080 u okvir 1920x1080 daje 1920x960.
+        assert!(joined.contains("scale=1920:960"), "skalirano na okvir: {joined}");
     }
 
     #[test]
@@ -317,7 +359,7 @@ mod tests {
         let input = PathBuf::from("/media/film.mkv");
         let subtitle = PathBuf::from("/media/Film (2026)/Film (2026).srt");
         let joined = build_args(&request(&decision, "mkv", &input, Some(&subtitle))).join(" ");
-        assert!(joined.contains("scale=-2:'min(720,ih)'"), "{joined}");
+        assert!(joined.contains("scale=1280:720"), "{joined}");
         assert!(joined.contains("subtitles=filename='/media/Film (2026)/Film (2026).srt'"), "{joined}");
         assert!(joined.contains("-vf"), "{joined}");
     }

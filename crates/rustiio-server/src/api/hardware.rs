@@ -19,10 +19,7 @@ pub fn routes() -> Router<AppState> {
 
 /// Što pojedini ubrzivač stvarno zna (popis iz ffmpeg-a, ne pretpostavka).
 fn enkoderi(ubrzivac: HwAccel) -> Vec<&'static str> {
-    ["h264", "hevc"]
-        .iter()
-        .filter_map(|kodek| video_encoder(ubrzivac, kodek))
-        .collect()
+    ["h264", "hevc"].iter().filter_map(|kodek| video_encoder(ubrzivac, kodek)).collect()
 }
 
 /// Grafička preko `nvidia-smi` (nema je? `null` — transcode tada ide na CPU).
@@ -52,11 +49,7 @@ pub async fn api_hardware(State(state): State<AppState>) -> Response {
     sistem.refresh_memory();
     let niti = sistem.cpus().len();
     let jezgre = System::physical_core_count().unwrap_or(niti);
-    let model = sistem
-        .cpus()
-        .first()
-        .map(|cpu| cpu.brand().trim().to_string())
-        .unwrap_or_default();
+    let model = sistem.cpus().first().map(|cpu| cpu.brand().trim().to_string()).unwrap_or_default();
 
     let ubrzivaci: Vec<Value> = hw
         .available
@@ -72,11 +65,7 @@ pub async fn api_hardware(State(state): State<AppState>) -> Response {
     let graficka = graficka();
     // Grafički način ima smisla samo ako stroj stvarno ima ubrzivač.
     let ima_gpu = hw.preferred != HwAccel::None;
-    let nacini: Vec<&str> = if ima_gpu {
-        vec!["auto", "gpu", "hybrid", "cpu"]
-    } else {
-        vec!["auto", "cpu"]
-    };
+    let nacini: Vec<&str> = if ima_gpu { vec!["auto", "gpu", "hybrid", "cpu"] } else { vec!["auto", "cpu"] };
 
     axum::Json(json!({
         "os": std::env::consts::OS,

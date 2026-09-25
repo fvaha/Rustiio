@@ -291,7 +291,7 @@ fn node_for(item: &ItemRow, catalog: &Catalog) -> Node {
             size: item.size,
             modified: None,
             children: Vec::new(),
-            subtitle: None,
+            subtitles: Vec::new(),
         },
     };
     // U ravnom popisu (rezultati pretrage) epizoda mora nositi i ime serije — unutar
@@ -418,6 +418,7 @@ mod tests {
             recent_limit: 5,
             playback: None,
             art: None,
+            subs: None,
         };
         let request = SearchRequest {
             container_id: "0".to_string(),

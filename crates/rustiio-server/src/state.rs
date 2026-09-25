@@ -253,10 +253,11 @@ impl AppState {
         // prvi TV koji naleti na 10-bit fajl ne dobije original koji ne otvara.
         let store = Arc::clone(&self.store);
         let probe = Arc::clone(&self.media_probe);
+        let ffmpeg = self.sessions.ffmpeg_path().to_string();
         std::thread::spawn(move || {
-            let updated = crate::library::backfill_bit_depth(&store, &probe);
+            let updated = crate::library::backfill_bit_depth(&store, &probe, &ffmpeg);
             if updated > 0 {
-                info!(count = updated, "dubina boje dopunjena (10-bit se ne vidi po kodeku)");
+                info!(count = updated, "dopunjeni metapodaci (dubina boje, jezici titlova)");
             }
         });
 
