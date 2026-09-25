@@ -209,9 +209,7 @@ fn output_container(profile: &Profile) -> (&'static str, &'static str) {
         "mkv" => ("video/x-matroska", "matroska"),
         // Uz `DLNA.ORG_PN=MPEG_TS_*` ide MIME `video/mpeg`. Samsung na `video/mpeg`
         // prijavi grešku formata (u informacijama onda piše "mp2t" i `.ts`).
-        _ if profile.transcode.video_codec.eq_ignore_ascii_case("mpeg2video") => {
-            ("video/mpeg", "mpegts")
-        }
+        _ if profile.transcode.video_codec.eq_ignore_ascii_case("mpeg2video") => ("video/mpeg", "mpegts"),
         _ => ("video/mpeg", "mpegts"),
     }
 }
@@ -304,10 +302,7 @@ fn transcode_decision(
         let hd = target.max_height.unwrap_or(1080) > 576;
         info.with_pn(if hd { "MPEG_TS_HD_NA" } else { "MPEG_TS_SD_NA" })
     } else if container == "mpegts"
-        && matches!(
-            target.video_codec.to_ascii_lowercase().as_str(),
-            "h264" | "hevc" | "h265"
-        )
+        && matches!(target.video_codec.to_ascii_lowercase().as_str(), "h264" | "hevc" | "h265")
     {
         // H.264/HEVC u MPEG-TS: Samsung trazi DLNA profil i za AVC stream. Bez PN-a
         // TV prijavi „format nije podrzan" ili vrti loading iako su kodeci ispravni
@@ -545,7 +540,10 @@ mod tests {
         assert_eq!(decision.video_encoder.as_deref(), Some("h264_nvenc"));
         assert_eq!(decision.container, "mpegts");
         assert_eq!(decision.mime, "video/mpeg");
-        assert!(decision.protocol_info.contains("DLNA.ORG_PN=AVC_TS_"), "transcode H.264 u TS salje AVC_TS_ PN");
+        assert!(
+            decision.protocol_info.contains("DLNA.ORG_PN=AVC_TS_"),
+            "transcode H.264 u TS salje AVC_TS_ PN"
+        );
         assert!(decision.reasons.iter().any(|reason| reason.contains("hevc")));
         assert!(decision.reasons.iter().any(|reason| reason.contains("eac3")));
     }

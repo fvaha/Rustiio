@@ -187,7 +187,6 @@ pub struct LibrarySection {
     pub watch: bool,
     /// Auto-sken: minute izmedju dva skeniranja (`None` = 15, `0` = iskljuceno).
     pub auto_scan_minutes: Option<u64>,
-
 }
 
 impl Default for LibrarySection {

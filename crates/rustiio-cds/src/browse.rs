@@ -340,9 +340,8 @@ pub fn node_to_object(node: &Node, catalog: &Catalog, options: &BrowseOptions<'_
             .and_then(|putanja| std::fs::metadata(putanja).ok())
             .map(|meta| meta.len())
             .unwrap_or(0);
-        object = object.with_resource(
-            Resource::new(&url, &informacije.to_protocol_info()).with_size(velicina),
-        );
+        object =
+            object.with_resource(Resource::new(&url, &informacije.to_protocol_info()).with_size(velicina));
     }
 
     if let Some(modified) = node.modified {

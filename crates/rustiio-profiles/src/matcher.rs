@@ -31,9 +31,7 @@ impl DeviceIdentity {
             .map(str::trim)
             .filter(|ip| !ip.is_empty() && !ip.starts_with("127.") && ip.trim() != "::1")
             .map(|ip| {
-                ip.split_once(':')
-                    .map(|(cisto, _)| cisto.to_string())
-                    .unwrap_or_else(|| ip.to_string())
+                ip.split_once(':').map(|(cisto, _)| cisto.to_string()).unwrap_or_else(|| ip.to_string())
             });
         if let Some(ip) = adresa {
             return format!("ip:{ip}");

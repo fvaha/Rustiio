@@ -28,7 +28,13 @@ pub struct PlaybackEngine<'a> {
 }
 
 impl<'a> PlaybackEngine<'a> {
-    pub fn new(profile: &'a Profile, hw: &'a HwSupport, media: &'a MediaProbe, enabled: bool, what: String) -> Self {
+    pub fn new(
+        profile: &'a Profile,
+        hw: &'a HwSupport,
+        media: &'a MediaProbe,
+        enabled: bool,
+        what: String,
+    ) -> Self {
         Self { profile, hw, media, enabled, what, decisions: Mutex::new(HashMap::new()) }
     }
 

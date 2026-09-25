@@ -431,8 +431,7 @@ async fn subtitle_by_name(
         let catalog = state.catalog.read().await;
         let cvor = catalog.get(&id).map(|node| (node.path.clone(), node.subtitles.clone()));
         cvor.and_then(|(video, vanjski)| {
-            let stem =
-                video.file_stem().map(|ime| ime.to_string_lossy().to_string()).unwrap_or_default();
+            let stem = video.file_stem().map(|ime| ime.to_string_lossy().to_string()).unwrap_or_default();
             // Vanjski titlovi su u katalogu, ugradjeni u probe kesu (isto kao DIDL) —
             // bez ovoga bi uredjaj dobio 404 za svaki titl iz kontejnera.
             let ugradjeni = state
@@ -605,7 +604,7 @@ async fn serve_transcoded(
         state.sessions.hw(),
         &state.media_probe,
         state.config.transcode.enabled,
-                state.config.transcode.what.clone(),
+        state.config.transcode.what.clone(),
     );
     match engine.decision(&node) {
         // Uredjaj moze original (ili ne znamo dovoljno) — saljemo fajl kakav jest.
@@ -1098,8 +1097,7 @@ async fn api_profile_create(
     let tekst = match toml::to_string_pretty(&novi) {
         Ok(tekst) => tekst,
         Err(error) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("zapis profila: {error}"))
-                .into_response();
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("zapis profila: {error}")).into_response();
         }
     };
     if let Err(error) = std::fs::write(&putanja, tekst) {
@@ -1479,7 +1477,7 @@ async fn api_decision(
         state.sessions.hw(),
         &state.media_probe,
         state.config.transcode.enabled,
-                state.config.transcode.what.clone(),
+        state.config.transcode.what.clone(),
     );
     let info = state.media_probe.get(&node.path);
     let summary = engine.decision_summary(&node);
@@ -1784,17 +1782,14 @@ async fn api_metadata_refresh(
             },
         };
         for item_id in &odabrani {
-            titles::forget(&store, &titles::scope(None, *item_id))
-                .map_err(|greska| greska.to_string())?;
+            titles::forget(&store, &titles::scope(None, *item_id)).map_err(|greska| greska.to_string())?;
             // Oznaka izvora mora biti prazna: `Some("none")` znaci "provjereno, slike
             // nema" pa bi dopuna ovu stavku preskocila (found = 0, poster ostane null).
-            items::update_poster(&store, *item_id, None, None)
-                .map_err(|greska| greska.to_string())?;
+            items::update_poster(&store, *item_id, None, None).map_err(|greska| greska.to_string())?;
             enricher.forget(*item_id);
         }
         if let Some(ime) = serija.as_deref().map(str::trim).filter(|ime| !ime.is_empty()) {
-            titles::forget(&store, &titles::scope(Some(ime), 0))
-                .map_err(|greska| greska.to_string())?;
+            titles::forget(&store, &titles::scope(Some(ime), 0)).map_err(|greska| greska.to_string())?;
         }
         Ok(odabrani.len())
     })
@@ -1836,9 +1831,7 @@ async fn api_metadata_refresh(
             }))
             .into_response()
         }
-        Ok(Err(greska)) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, format!("dohvat: {greska}")).into_response()
-        }
+        Ok(Err(greska)) => (StatusCode::INTERNAL_SERVER_ERROR, format!("dohvat: {greska}")).into_response(),
         Err(greska) => (StatusCode::INTERNAL_SERVER_ERROR, format!("posao: {greska}")).into_response(),
     }
 }
