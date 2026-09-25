@@ -159,7 +159,6 @@
         aria-selected={tab === section.key}
         onclick={() => (tab = section.key)}
       >
-        <span aria-hidden="true">{section.icon}</span>
         <span>{text(section.title)}</span>
         <span class="n">{counts[section.key] ?? 0}</span>
         {#if ceka[section.key]}<span class="dot" title={t('set.restart_pending')}></span>{/if}
@@ -173,7 +172,6 @@
       aria-selected={tab === 'napredno'}
       onclick={() => (tab = 'napredno')}
     >
-      <span aria-hidden="true">⌘</span>
       <span>{t('set.advanced')}</span>
       <span class="n">JSON</span>
     </button>
@@ -229,7 +227,7 @@
     {:else if aktivna}
       <section class="panel" id={aktivna.key}>
         <div class="panel-head">
-          <h2><span aria-hidden="true">{aktivna.icon}</span> {text(aktivna.title)}</h2>
+          <h2> {text(aktivna.title)}</h2>
           <p>{text(aktivna.desc)}</p>
         </div>
         <div class="panel-body">

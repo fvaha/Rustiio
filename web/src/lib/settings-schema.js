@@ -11,7 +11,6 @@ export const SECTIONS = [
       hr: 'Ime pod kojim se server vidi na televizorima, adresa i port, te razina zapisnika.',
       en: 'How the server appears on TVs, its address and port, and log verbosity.',
     },
-    icon: '📺',
   },
   {
     key: 'library',
@@ -20,7 +19,6 @@ export const SECTIONS = [
       hr: 'Mape s medijima, koje se datoteke priznaju, koliko duboko se skenira i što se nudi na televizorima.',
       en: 'Media folders, which files count, how deep to scan, and what TVs are offered.',
     },
-    icon: '🗂',
   },
   {
     key: 'transcode',
@@ -29,7 +27,6 @@ export const SECTIONS = [
       hr: 'Prekodiranje za televizore koji ne podnose izvorni format. Isključeno znači „nikad ne diraj datoteku".',
       en: 'Re-encoding for TVs that cannot play the source format. Off means "never touch the file".',
     },
-    icon: '🎛',
   },
   {
     key: 'profiles',
@@ -38,7 +35,6 @@ export const SECTIONS = [
       hr: 'Što server smije ponuditi kojem televizoru i gdje se spremaju profili naučeni iz stvarnih uređaja.',
       en: 'What the server may offer each TV, and where profiles learned from real devices are stored.',
     },
-    icon: '🧩',
   },
   {
     key: 'network',
@@ -47,7 +43,6 @@ export const SECTIONS = [
       hr: 'Koja se obitelj adresa koristi pri dohvaćanju s interneta (kućne mreže znaju imati mrtav IPv6).',
       en: 'Which address family is used for outbound requests (home networks often have a dead IPv6).',
     },
-    icon: '🌐',
   },
   {
     key: 'ui',
@@ -56,7 +51,6 @@ export const SECTIONS = [
       hr: 'Jezik ovog sučelja na svim uređajima.',
       en: 'Language of this interface on every device.',
     },
-    icon: '🎨',
   },
 ]
 

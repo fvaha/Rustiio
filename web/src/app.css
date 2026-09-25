@@ -379,7 +379,9 @@ table.tbl td.n, table.tbl th.n { text-align: right; font-variant-numeric: tabula
 
 /* ------------------------------------------------------------------ postavke */
 
-.settings { display: grid; grid-template-columns: 198px minmax(0, 1fr); gap: 26px; align-items: start; }
+/* Sekcije Postavki su vodoravni tabovi iznad sadržaja (prije uski lijevi stupac
+   198px u kojem su se tabovi lomili jedan pod drugim). */
+.settings { display: block; }
 .settings-nav { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 2px; }
 /* Skok na sekciju iz navigacije: naslov sekcije ne smije završiti pod ljepljivim zaglavljem. */
 .settings section.panel { scroll-margin-top: 84px; }
