@@ -207,12 +207,12 @@ fn output_container(profile: &Profile) -> (&'static str, &'static str) {
         // MKV: TV (MU6172) pusta MKV i kad je stream; `mpegts` mu se prikaze
         // kao "mp2t" i ne pokrene se, pa kontejner mora biti matroska.
         "mkv" => ("video/x-matroska", "matroska"),
-        // Uz `DLNA.ORG_PN=MPEG_TS_*` ide MIME `video/mpeg`. Samsung na `video/mp2t`
+        // Uz `DLNA.ORG_PN=MPEG_TS_*` ide MIME `video/mpeg`. Samsung na `video/mpeg`
         // prijavi grešku formata (u informacijama onda piše "mp2t" i `.ts`).
         _ if profile.transcode.video_codec.eq_ignore_ascii_case("mpeg2video") => {
             ("video/mpeg", "mpegts")
         }
-        _ => ("video/mp2t", "mpegts"),
+        _ => ("video/mpeg", "mpegts"),
     }
 }
 
@@ -259,7 +259,7 @@ fn transcode_decision(
     // Za transcode NEMA DLNA.ORG_PN — profil je taj koji garantira da stream ide.
     // OP=00: live stream nema poznatu velicinu ni Range, pa se NE smije
     // oglasavati byte-seek (OP=00) — Samsung takav res odbije (samo HEAD, bez GET-a).
-    let mut info = ProtocolInfo::new(mime).with_op("00").with_flags(&profile.dlna.flags);
+    let mut info = ProtocolInfo::new(mime).with_op("10").with_flags(&profile.dlna.flags);
     // CI=1: sadrzaj je konverzija, ne original. Bez toga TV primijeni pravila za
     // original i stream mu „ne odgovara" (Samsung to prijavi kao gresku formata).
     info.ci = Some("1".to_string());
@@ -303,6 +303,23 @@ fn transcode_decision(
         // Visina izvora nije poznata u ovoj funkciji; ciljna visina profila je dovoljna.
         let hd = target.max_height.unwrap_or(1080) > 576;
         info.with_pn(if hd { "MPEG_TS_HD_NA" } else { "MPEG_TS_SD_NA" })
+    } else if container == "mpegts"
+        && matches!(
+            target.video_codec.to_ascii_lowercase().as_str(),
+            "h264" | "hevc" | "h265"
+        )
+    {
+        // H.264/HEVC u MPEG-TS: Samsung trazi DLNA profil i za AVC stream. Bez PN-a
+        // TV prijavi „format nije podrzan" ili vrti loading iako su kodeci ispravni
+        // (Serviio salje: DLNA.ORG_PN=AVC_TS_HP_HD_AC3 + Content-Type: video/mpeg).
+        let hd = target.max_height.unwrap_or(1080) > 576;
+        let ac3 = target.audio_codec.eq_ignore_ascii_case("ac3");
+        info.with_pn(match (hd, ac3) {
+            (true, true) => "AVC_TS_HP_HD_AC3",
+            (true, false) => "AVC_TS_MP_HD_AAC_MULT5",
+            (false, true) => "AVC_TS_MP_SD_AC3",
+            (false, false) => "AVC_TS_MP_SD_AAC_MULT5",
+        })
     } else {
         info
     };
@@ -527,8 +544,8 @@ mod tests {
         assert_eq!(decision.mode, PlaybackMode::Transcode { video: true, audio: true });
         assert_eq!(decision.video_encoder.as_deref(), Some("h264_nvenc"));
         assert_eq!(decision.container, "mpegts");
-        assert_eq!(decision.mime, "video/mp2t");
-        assert!(!decision.protocol_info.contains("DLNA.ORG_PN"), "transcode stream nema PN");
+        assert_eq!(decision.mime, "video/mpeg");
+        assert!(decision.protocol_info.contains("DLNA.ORG_PN=AVC_TS_"), "transcode H.264 u TS salje AVC_TS_ PN");
         assert!(decision.reasons.iter().any(|reason| reason.contains("hevc")));
         assert!(decision.reasons.iter().any(|reason| reason.contains("eac3")));
     }

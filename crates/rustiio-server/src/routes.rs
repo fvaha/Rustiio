@@ -697,6 +697,10 @@ fn transcode_response(
     let mut builder = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, decision.mime.clone())
+        // Serviio trik: Samsungov DLNA player trazi duljinu odgovora. Za zivi stream
+        // je stvarna duljina nepoznata, pa se (kao Serviio) salje velika zamjenska
+        // vrijednost — TV tada otvori stream umjesto da vrti loading/error.
+        .header(header::CONTENT_LENGTH, "50000000000")
         .header("transfermode.dlna.org", "Streaming")
         .header("contentfeatures.dlna.org", content_features)
         .header(header::CACHE_CONTROL, "no-store")

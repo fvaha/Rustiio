@@ -214,7 +214,7 @@ mod tests {
             mode: PlaybackMode::Remux,
             reasons: Vec::new(),
             protocol_info: String::new(),
-            mime: "video/mp2t".to_string(),
+            mime: "video/mpeg".to_string(),
             container: "mpegts".to_string(),
             video_encoder: None,
             video_bitrate_kbps: None,

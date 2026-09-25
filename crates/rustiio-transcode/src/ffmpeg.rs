@@ -232,7 +232,7 @@ mod tests {
             mode,
             reasons: Vec::new(),
             protocol_info: String::new(),
-            mime: "video/mp2t".to_string(),
+            mime: "video/mpeg".to_string(),
             container: container.to_string(),
             video_encoder: encoder.map(|value| value.to_string()),
             video_bitrate_kbps: Some(8000),

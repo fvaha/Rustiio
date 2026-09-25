@@ -217,7 +217,7 @@ mod tests {
         let playback = engine.resolve(&node("/media/film.mp4")).expect("mora transcode");
         // Izlaz je MPEG-TS, pa i ime nosi `.ts` — Samsung gleda ekstenziju.
         assert_eq!(playback.path, "/tr/7/film.ts");
-        assert!(playback.protocol_info.contains("video/mp2t"), "{}", playback.protocol_info);
+        assert!(playback.protocol_info.contains("video/mpeg"), "{}", playback.protocol_info);
     }
 
     #[test]

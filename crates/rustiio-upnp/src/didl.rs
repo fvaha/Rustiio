@@ -200,6 +200,15 @@ fn render_resource(out: &mut String, resource: &Resource) {
     out.push('>');
     out.push_str(&escape(&resource.url));
     out.push_str("</res>");
+    // Samsung cita i OVAJ oblik — element uz `res` (tako radi Serviio). Neki modeli
+    // ignoriraju atribut na `res`, pa se salju oba oblika.
+    if let (Some(url), Some(kind)) = (&resource.caption_url, &resource.caption_type) {
+        out.push_str(&format!(
+            r#"<sec:CaptionInfoEx sec:type="{}">{}</sec:CaptionInfoEx>"#,
+            escape(kind),
+            escape(url)
+        ));
+    }
 }
 
 #[cfg(test)]
