@@ -462,7 +462,7 @@ pub fn guess_language(sample: &str) -> Option<&'static str> {
         + ["ğ", "ş", "ı"].iter().map(|slovo| uzorak.matches(slovo).count().min(15) as i32).sum::<i32>();
     rezultat.push(("Turkish", turski));
 
-    rezultat.sort_by(|a, b| b.1.cmp(&a.1));
+    rezultat.sort_by_key(|a| std::cmp::Reverse(a.1));
     let (ime, bodovi) = rezultat[0];
     // Bez jasnog pobjednika (npr. samo imena likova u titlu) bolje ne tvrditi nista.
     if bodovi < 6 {

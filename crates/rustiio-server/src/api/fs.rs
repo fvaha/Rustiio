@@ -130,7 +130,7 @@ fn read_dir(dir: &Path, extensions: &[String]) -> Listing {
         listing.dirs.push(Entry { name, path: path.display().to_string(), videos, folders });
     }
 
-    listing.dirs.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    listing.dirs.sort_by_key(|left| left.name.to_lowercase());
     listing
 }
 

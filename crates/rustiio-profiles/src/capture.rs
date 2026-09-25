@@ -105,7 +105,7 @@ impl Capture {
     pub fn all(&self) -> Vec<DeviceRecord> {
         let Ok(devices) = self.devices.lock() else { return Vec::new() };
         let mut out: Vec<DeviceRecord> = devices.values().cloned().collect();
-        out.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+        out.sort_by_key(|a| std::cmp::Reverse(a.last_seen));
         out
     }
 

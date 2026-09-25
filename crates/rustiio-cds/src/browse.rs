@@ -388,7 +388,7 @@ fn sort_nodes(nodes: &mut [Node], criteria: &str) {
         None => (false, first.strip_prefix('+').unwrap_or(first)),
     };
     match field {
-        "dc:date" => nodes.sort_by(|a, b| a.modified.cmp(&b.modified)),
+        "dc:date" => nodes.sort_by_key(|a| a.modified),
         _ => nodes.sort_by_key(|n| n.title.to_lowercase()),
     }
     if descending {

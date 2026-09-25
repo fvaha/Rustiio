@@ -144,7 +144,7 @@ impl Catalog {
     /// Zadnjih `limit` objekata zadanih vrsta po vremenu izmjene ("Nedavno dodano").
     pub fn recent(&self, kinds: &[NodeKind], limit: usize) -> Vec<Node> {
         let mut items = self.of_kinds(kinds);
-        items.sort_by(|a, b| b.modified.cmp(&a.modified));
+        items.sort_by_key(|a| std::cmp::Reverse(a.modified));
         items.truncate(limit);
         items
     }
