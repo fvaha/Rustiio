@@ -390,11 +390,6 @@ pub fn classify(ext: &str) -> NodeKind {
     }
 }
 
-fn is_subtitle(path: &Path) -> bool {
-    let ext = extension_lower(path);
-    SUBTITLE_EXTENSIONS.contains(&ext.as_str())
-}
-
 fn extension_lower(path: &Path) -> String {
     path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default()
 }
