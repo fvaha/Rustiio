@@ -4,7 +4,7 @@ description = "Rustiio u prozoru — isti server, samo s vlastitim sučeljem"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-license = "MIT"
+license = "GPL-3.0-only"
 authors = ["vaha.net"]
 repository = "https://vaha.net"
 
