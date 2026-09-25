@@ -7,6 +7,7 @@ pub mod api;
 pub mod art;
 pub mod assets;
 pub mod boot;
+pub mod front;
 pub mod gena;
 pub mod library;
 pub mod playback;

@@ -65,6 +65,9 @@ pub struct Booted {
     pub listener: Option<TcpListener>,
     pub addr: SocketAddr,
     ssdp: Option<SsdpHandle>,
+    /// Kad je ukljucen HTTPS, javni port drzi `front` sloj, a axum slusa na
+    /// ovom lokalnom portu (HTTP za DLNA put).
+    front_http: Option<u16>,
     /// Drop zaustavlja praćenje mapa, pa ga držimo uz server.
     watcher: Option<LibraryWatcher>,
 }
@@ -118,6 +121,19 @@ impl Booted {
             }
         }
 
+        // Javni port prima i HTTP (televizor) i HTTPS (preglednik): front pogleda
+        // prvi bajt, pa TLS ide na HTTPS slusalicu, a sve ostalo na ovu HTTP.
+        if let (Some(unutrasnji), Some(https)) =
+            (self.front_http, self.state.config.server.https_port)
+        {
+            let bind = self.state.config.server.bind.clone();
+            let javni = self.state.config.server.http_port;
+            tokio::spawn(async move {
+                if let Err(greska) = crate::front::slusaj(&bind, javni, unutrasnji, https).await {
+                    tracing::warn!(%greska, javni, "front za HTTP/HTTPS je stao");
+                }
+            });
+        }
         let app = crate::router(self.state.clone());
         axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
             .with_graceful_shutdown(shutdown)
@@ -196,10 +212,19 @@ pub async fn boot(config_path: PathBuf, options: BootOptions) -> anyhow::Result<
     let watcher = start_watch(&state, &config, options.watch);
 
     // SSDP: bez njega nas TV ne nalazi sam.
-    let listener = TcpListener::bind((config.server.bind.as_str(), port))
-        .await
-        .with_context(|| format!("bind na {}:{port}", config.server.bind))?;
-    let addr = listener.local_addr().with_context(|| "lokalna adresa")?;
+    let deljeni_port = config.server.https_port.is_some() && options.port.is_none();
+    let listener = if deljeni_port {
+        TcpListener::bind(("127.0.0.1", 0)).await.with_context(|| "bind na lokalni port")?
+    } else {
+        TcpListener::bind((config.server.bind.as_str(), port))
+            .await
+            .with_context(|| format!("bind na {}:{port}", config.server.bind))?
+    };
+    let unutrasnji_http = listener.local_addr().with_context(|| "lokalna adresa")?.port();
+    // Javna adresa ostaje ista (u nju idu DIDL `res` URL-ovi i SSDP LOCATION).
+    let addr: SocketAddr = format!("{ip}:{port}")
+        .parse()
+        .unwrap_or_else(|_| listener.local_addr().unwrap_or_else(|_| "0.0.0.0:0".parse().expect("adresa")));
     // SSDP je važan, ali ako padne (npr. zauzet port 1900) server i dalje radi —
     // bolje reći pa nastaviti nego da se cijela aplikacija ne digne.
     let ssdp = match start_alive(&config, &identity, &ip, &base_url, options.ssdp).await {
@@ -210,7 +235,19 @@ pub async fn boot(config_path: PathBuf, options: BootOptions) -> anyhow::Result<
         }
     };
 
-    Ok(Booted { state, config, identity, ip, port, base_url, listener: Some(listener), addr, ssdp, watcher })
+    Ok(Booted {
+        state,
+        config,
+        identity,
+        ip,
+        port,
+        base_url,
+        listener: Some(listener),
+        addr,
+        ssdp,
+        watcher,
+        front_http: if deljeni_port { Some(unutrasnji_http) } else { None },
+    })
 }
 
 /// Skeniraj biblioteku i javi što je nađeno.
