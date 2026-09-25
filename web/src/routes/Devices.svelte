@@ -234,10 +234,6 @@
                       <span class="tag accent">{device.profile || '—'}</span>
                       {#if device.profile_choice}<span class="tag ok" title={t('devices.chosen')}>{t('devices.chosen')}</span>{/if}
                     </div>
-                  </td>
-                  <td class="muted nowrap" title={dateTime(device.last_seen)}>{ago(device.last_seen)}</td>
-                  <td class="right">{device.requests}</td>
-                  <td class="right nowrap">
                     <select
                       class="select sm assign"
                       title={t('devices.assign_hint')}
@@ -249,6 +245,10 @@
                         <option value={profile.id}>{profile.id}</option>
                       {/each}
                     </select>
+                  </td>
+                  <td class="muted nowrap" title={dateTime(device.last_seen)}>{ago(device.last_seen)}</td>
+                  <td class="right">{device.requests}</td>
+                  <td class="right nowrap">
                     <button class="btn ghost" onclick={() => showToml(device)} title={t('devices.toml_hint')}>
                       {opened === device.key ? '▾' : '▸'} TOML
                     </button>
@@ -477,8 +477,12 @@
     gap: 8px;
     margin-top: 14px;
   }
+  /* Izbor profila stoji ispod oznake u stupcu Profil — u stupcu akcija je bio
+     odrezan desno, izvan kartice. */
   .assign {
-    max-width: 190px;
+    display: block;
+    max-width: 210px;
+    margin-top: 6px;
   }
   pre {
     overflow-x: auto;
