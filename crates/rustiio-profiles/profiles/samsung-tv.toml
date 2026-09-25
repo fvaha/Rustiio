@@ -13,8 +13,7 @@ codecs = ["h264", "hevc", "vp9", "mpeg2video", "mpeg4"]
 max_width = 3840
 max_height = 2160
 max_bitrate_kbps = 60000
-# TV zna HEVC Main 10 (4K HDR) — bez ovoga 10-bit ide u transcode.
-max_bit_depth = 10
+max_bit_depth = 8
 
 [audio]
 codecs = ["aac", "mp3", "ac3", "eac3", "dts", "flac", "vorbis", "opus", "truehd"]
