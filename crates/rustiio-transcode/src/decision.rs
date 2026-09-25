@@ -254,7 +254,9 @@ fn transcode_decision(
     let (mime, container) = output_container(profile);
 
     // Za transcode NEMA DLNA.ORG_PN — profil je taj koji garantira da stream ide.
-    let mut info = ProtocolInfo::new(mime).with_op(&profile.dlna.op).with_flags(&profile.dlna.flags);
+    // OP=00: live stream nema poznatu velicinu ni Range, pa se NE smije
+    // oglasavati byte-seek (OP=01) — Samsung takav res odbije (samo HEAD, bez GET-a).
+    let mut info = ProtocolInfo::new(mime).with_op("00").with_flags(&profile.dlna.flags);
     // CI=1: sadrzaj je konverzija, ne original. Bez toga TV primijeni pravila za
     // original i stream mu „ne odgovara" (Samsung to prijavi kao gresku formata).
     info.ci = Some("1".to_string());
