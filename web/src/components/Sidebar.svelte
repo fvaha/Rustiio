@@ -14,7 +14,8 @@
   <div class="brand">
     <span class="logo"><img src="/icon-48.png" alt="Rustiio" /></span>
     <span>
-      <span class="name">{t('app')}</span><br />
+      <!-- Naziv proizvoda se ne prevodi; `t('app')` vraća cijeli rječnik pa je ispisivao [object Object]. -->
+      <span class="name">Rustiio</span><br />
       <span class="ver">{store.status?.version ? `v${store.status.version}` : '—'}</span>
     </span>
   </div>
