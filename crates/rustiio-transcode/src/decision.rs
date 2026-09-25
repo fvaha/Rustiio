@@ -49,6 +49,9 @@ pub struct Decision {
     /// Video encoder za ffmpeg (`h264_nvenc`, `libx264`, ...); `None` = kopiraj.
     pub video_encoder: Option<String>,
     pub video_bitrate_kbps: Option<u32>,
+    /// Najveća širina koju profil dopušta (2160x1080 izvor mora se rezati i po
+    /// širini, ne samo po visini).
+    pub max_width: Option<u32>,
     pub max_height: Option<u32>,
     /// Audio encoder; `None` = kopiraj.
     pub audio_encoder: Option<String>,
@@ -168,6 +171,7 @@ fn remux_decision(profile: &Profile, reasons: Vec<String>, hw: &HwSupport, media
         container: container.to_string(),
         video_encoder: None,
         video_bitrate_kbps: media.video.as_ref().and_then(|video| video.bitrate_kbps),
+        max_width: None,
         max_height: None,
         audio_encoder: None,
         audio_channels: None,
@@ -203,6 +207,7 @@ fn direct_decision(
         container: ext.to_string(),
         video_encoder: None,
         video_bitrate_kbps: media.bitrate_kbps,
+        max_width: None,
         max_height: None,
         audio_encoder: None,
         audio_channels: None,
@@ -264,6 +269,7 @@ fn transcode_decision(
         container: container.to_string(),
         video_encoder,
         video_bitrate_kbps: if video { Some(target.max_bitrate_kbps) } else { None },
+        max_width: if video { Some(profile.video.max_width).filter(|sirina| *sirina > 0) } else { None },
         max_height: if video { target.max_height } else { None },
         audio_encoder,
         audio_channels: if audio { Some(target.audio_channels) } else { None },

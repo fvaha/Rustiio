@@ -115,8 +115,17 @@ fn video_filters(request: &StartRequest<'_>) -> Option<String> {
     let decision = request.decision;
     let mut filters: Vec<String> = Vec::new();
 
-    if let Some(max_height) = decision.max_height.filter(|value| *value > 0) {
-        filters.push(format!("scale=-2:'min({max_height},ih)'"));
+    // Reži po obje dimenzije iz profila: 2160x1080 uz profil 1920x1080 ostavlja
+    // 2160 širine ako se gleda samo visina, a TV takav okvir odbije.
+    let max_sirina = decision.max_width.filter(|value| *value > 0);
+    let max_visina = decision.max_height.filter(|value| *value > 0);
+    match (max_sirina, max_visina) {
+        (Some(sirina), Some(visina)) => filters.push(format!(
+            "scale='min({sirina},iw)':'min({visina},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+        )),
+        (None, Some(visina)) => filters.push(format!("scale=-2:'min({visina},ih)'")),
+        (Some(sirina), None) => filters.push(format!("scale='min({sirina},iw)':-2")),
+        (None, None) => {}
     }
     if decision.burn_subtitles {
         if let Some(subtitle) = request.subtitle {
@@ -125,6 +134,16 @@ fn video_filters(request: &StartRequest<'_>) -> Option<String> {
     }
     if decision.hw == hwaccel::HwAccel::Vaapi {
         filters.push("format=nv12,hwupload".to_string());
+    }
+
+    // Izlazni enkoderi su 8-bitni (NVENC, QSV, VideoToolbox, libx264). 10-bit izvor
+    // (`hevc Main 10`, `yuv420p10le`) inače obori enkoder s „10 bit encode not
+    // supported": ffmpeg ne napiše ni bajt, a TV prijavi grešku. VAAPI već ima svoj
+    // `format=nv12` (isto 8-bit).
+    if decision.video_encoder.is_some()
+        && !filters.iter().any(|filter| filter.contains("hwupload"))
+    {
+        filters.push("format=yuv420p".to_string());
     }
 
     if filters.is_empty() { None } else { Some(filters.join(",")) }
@@ -177,6 +196,7 @@ mod tests {
             container: container.to_string(),
             video_encoder: encoder.map(|value| value.to_string()),
             video_bitrate_kbps: Some(8000),
+            max_width: None,
             max_height: None,
             audio_encoder: Some("aac".to_string()),
             audio_channels: Some(2),
@@ -217,6 +237,36 @@ mod tests {
         let input = PathBuf::from("/media/film.mp4");
         let args = build_args(&request(&decision, "mp4", &input, None));
         assert!(args.join(" ").contains("-bsf:v h264_mp4toannexb"), "{args:?}");
+    }
+
+    #[test]
+    fn ten_bit_source_gets_eight_bit_output_and_width_cap() {
+        // Lanterns (hevc Main 10, 2160x1080) je obarao h264_nvenc i TV je dobio 0
+        // bajtova; uz to je ostajao preširok za profil (1920x1080).
+        let mut decision = decision(
+            PlaybackMode::Transcode { video: true, audio: true },
+            "mpegts",
+            Some("h264_nvenc"),
+            HwAccel::Nvenc,
+        );
+        decision.max_width = Some(1920);
+        decision.max_height = Some(1080);
+        let input = PathBuf::from("/media/lanterns.mkv");
+        let joined = build_args(&request(&decision, "mkv", &input, None)).join(" ");
+
+        assert!(joined.contains("format=yuv420p"), "10-bit ide u 8-bit: {joined}");
+        assert!(joined.contains("min(1920,iw)"), "širina se reže: {joined}");
+        assert!(joined.contains("min(1080,ih)"), "visina se reže: {joined}");
+        assert!(joined.contains("force_divisible_by=2"), "parne dimenzije: {joined}");
+    }
+
+    #[test]
+    fn copy_does_not_force_pixel_format() {
+        // Remux ne smije dobiti `format=`: to bi značilo re-enkodiranje.
+        let decision = decision(PlaybackMode::Remux, "mpegts", None, HwAccel::None);
+        let input = PathBuf::from("/media/film.mkv");
+        let joined = build_args(&request(&decision, "mkv", &input, None)).join(" ");
+        assert!(!joined.contains("format="), "remux kopira: {joined}");
     }
 
     #[test]

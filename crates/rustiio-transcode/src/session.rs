@@ -218,6 +218,7 @@ mod tests {
             container: "mpegts".to_string(),
             video_encoder: None,
             video_bitrate_kbps: None,
+            max_width: None,
             max_height: None,
             audio_encoder: None,
             audio_channels: None,
