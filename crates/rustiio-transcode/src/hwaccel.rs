@@ -317,7 +317,7 @@ pub fn video_encoder(hw: HwAccel, codec: &str) -> Option<&'static str> {
 /// Dodatni argumenti za encoder (preset, rate control, pixel format).
 pub fn encoder_args(hw: HwAccel, bitrate_kbps: u32, needs_software_pix_fmt: bool) -> Vec<String> {
     let bitrate = bitrate_kbps.max(500);
-    let maxrate = (bitrate as f64 * 1.2) as u32;
+    let maxrate = (bitrate as f64 * 1.5) as u32;
     let bufsize = bitrate * 2;
     let rate = |args: &mut Vec<String>| {
         args.push("-b:v".to_string());
@@ -333,8 +333,15 @@ pub fn encoder_args(hw: HwAccel, bitrate_kbps: u32, needs_software_pix_fmt: bool
         HwAccel::Nvenc => {
             args.push("-preset".to_string());
             args.push("p4".to_string());
+            // Samsung tuning (korisnikov Serviio recept): hq umjesto low-latency,
+            // GOP 48 (2 s) i 2 B-framea. `-bf` NVENC ne zna na svakoj kartici —
+            // zato ide na kraj, a test na uredjaju potvrdjuje da prolazi.
             args.push("-tune".to_string());
-            args.push("ll".to_string());
+            args.push("hq".to_string());
+            args.push("-g".to_string());
+            args.push("48".to_string());
+            args.push("-bf".to_string());
+            args.push("2".to_string());
             args.push("-rc".to_string());
             args.push("vbr".to_string());
             rate(&mut args);
