@@ -59,7 +59,12 @@
           <option value={language.id}>{language.label()}</option>
         {/each}
       </select>
-      <button class="btn ghost" title={t('common.refresh')} onclick={rescan}>⟳</button>
+      <button class="btn ghost" title={t('common.scan_hint')} onclick={rescan}>⟳</button>
+    </div>
+    <button class="btn scan" title={t('common.scan_hint')} onclick={rescan}>
+      ⟳ {t('common.scan')}
+    </button>
+    <div class="tiny faint" style="margin-top: 4px">{t('common.auto_scan')}
     </div>
     <div class="tiny faint mono" style="margin-top: 8px; word-break: break-all">{store.status?.base_url ?? ''}</div>
   </div>

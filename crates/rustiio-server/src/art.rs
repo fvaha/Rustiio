@@ -18,6 +18,9 @@ use tokio::sync::RwLock;
 pub struct StoreArt {
     store: Arc<Store>,
     base_url: Arc<String>,
+    /// Za verziju u URL-u (`?v=`) — bez toga preglednik drži staru sliku pod istim
+    /// `/art/<id>` i u dashboardu se vidi poster koji je odavno zamijenjen.
+    art_dir: Option<PathBuf>,
     /// Potreban samo za izmišljene čvorove (serija/sezona): oni nemaju svoj red u
     /// bazi, pa poster uzimaju od epizoda ispod sebe.
     catalog: Option<Arc<RwLock<Catalog>>>,
@@ -25,7 +28,13 @@ pub struct StoreArt {
 
 impl StoreArt {
     pub fn new(store: Arc<Store>, base_url: Arc<String>) -> Self {
-        Self { store, base_url, catalog: None }
+        Self { store, base_url, catalog: None, art_dir: None }
+    }
+
+    /// Daj mapu keša slika — bez nje URL nema verziju (preglednik kešira zauvijek).
+    pub fn with_art_dir(mut self, art_dir: PathBuf) -> Self {
+        self.art_dir = Some(art_dir);
+        self
     }
 
     /// Daj katalog — bez njega serije i sezone nemaju poster.
@@ -75,7 +84,7 @@ impl ArtLookup for StoreArt {
     fn art_url(&self, item_id: &str) -> Option<String> {
         if let Ok(id) = item_id.parse::<i64>() {
             // Red je bitan: i datoteka i zapis u bazi moraju postojati.
-            return self.has_art(id).then(|| format!("{}/art/{id}", self.base_url));
+            return self.has_art(id).then(|| self.url_for(id));
         }
         // Serija (`s:slug`) i sezona (`s:slug:2`) nemaju svoj red — poster ide od
         // epizoda. `try_read` namjerno: ako netko upravo piše katalog, bolje bez
@@ -83,8 +92,37 @@ impl ArtLookup for StoreArt {
         let catalog = self.catalog.as_ref()?.try_read().ok()?;
         let node = catalog.get(item_id)?;
         let epizoda = self.poster_from_subtree(node, &catalog)?;
-        Some(format!("{}/art/{epizoda}", self.base_url))
+        Some(self.url_for(epizoda))
     }
+}
+
+impl StoreArt {
+    /// URL slike s verzijom (`?v=<vrijeme><velicina>`), da svaka promjena postera
+    /// dobije novi URL i preglednik/televizor ne prikazuju staru sliku.
+    fn url_for(&self, id: i64) -> String {
+        match self.version(id) {
+            Some(verzija) => format!("{}/art/{id}?v={verzija}", self.base_url),
+            None => format!("{}/art/{id}", self.base_url),
+        }
+    }
+
+    /// Verzija slike: vrijeme promjene i veličina datoteke u kešu.
+    fn version(&self, id: i64) -> Option<String> {
+        let (file, _source) = items::poster_of(&self.store, id).ok().flatten()?;
+        let name = poster_file_name(&file)?;
+        let meta = std::fs::metadata(self.art_dir.as_ref()?.join(name)).ok()?;
+        let sekunde = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+        Some(format!("{sekunde:x}{:x}", meta.len()))
+    }
+}
+
+/// Verzija slike za `GET /art/{id}` (ETag i `?v=` u URL-u).
+pub fn version_of(store: &Store, art_dir: &Path, item_id: i64) -> Option<String> {
+    let (file, _source) = items::poster_of(store, item_id).ok().flatten()?;
+    let name = poster_file_name(&file)?;
+    let meta = std::fs::metadata(art_dir.join(name)).ok()?;
+    let sekunde = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+    Some(format!("{sekunde:x}{:x}", meta.len()))
 }
 
 /// Vrsta slike iz nastavka imena (bez čitanja sadržaja — jeftino i točno).

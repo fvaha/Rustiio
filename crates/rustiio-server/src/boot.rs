@@ -158,6 +158,7 @@ pub async fn boot(config_path: PathBuf, options: BootOptions) -> anyhow::Result<
 
     start_probe(&state, options.probe);
     start_posters(&state, options.posters);
+    crate::state::start_auto_scan(&state);
     let watcher = start_watch(&state, &config, options.watch);
 
     // SSDP: bez njega nas TV ne nalazi sam.

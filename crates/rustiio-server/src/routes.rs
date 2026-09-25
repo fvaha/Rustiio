@@ -67,6 +67,7 @@ pub fn router(state: AppState) -> Router {
         .route("/art/{id}", get(api_art))
         .route("/api/posters", get(api_posters))
         .route("/api/posters/refresh", post(api_posters_refresh))
+        .route("/api/metadata/refresh", post(api_metadata_refresh))
         .merge(crate::api::browse::routes())
         .merge(crate::api::fs::routes())
         .merge(crate::api::stats::routes())
@@ -235,7 +236,8 @@ async fn content_directory_control(
                 state.config.transcode.enabled,
             );
             let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone())
-                .with_catalog(state.catalog.clone());
+                .with_catalog(state.catalog.clone())
+                .with_art_dir(state.enricher.art_dir().to_path_buf());
             let ugradjeni = crate::library::EmbeddedSubtitles {
                 catalog: std::sync::Arc::clone(&state.catalog),
                 probe: std::sync::Arc::clone(&state.media_probe),
@@ -291,7 +293,8 @@ async fn content_directory_control(
                 state.config.transcode.enabled,
             );
             let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone())
-                .with_catalog(state.catalog.clone());
+                .with_catalog(state.catalog.clone())
+                .with_art_dir(state.enricher.art_dir().to_path_buf());
             let ugradjeni = crate::library::EmbeddedSubtitles {
                 catalog: std::sync::Arc::clone(&state.catalog),
                 probe: std::sync::Arc::clone(&state.media_probe),
@@ -1686,7 +1689,15 @@ async fn api_art(State(state): State<AppState>, Path(id): Path<String>) -> Respo
             Ok(bytes) => (
                 [
                     (header::CONTENT_TYPE, content_type.to_string()),
-                    (header::CACHE_CONTROL, "public, max-age=86400".to_string()),
+                    (header::CACHE_CONTROL, "public, max-age=3600".to_string()),
+                    (
+                        header::ETAG,
+                        format!(
+                            "\"{}\"",
+                            crate::art::version_of(&state.store, &state.enricher.art_dir(), item_id)
+                                .unwrap_or_else(|| "0".to_string())
+                        ),
+                    ),
                 ],
                 bytes,
             )
@@ -1717,6 +1728,113 @@ async fn api_posters(State(state): State<AppState>) -> Response {
 }
 
 /// Ponovni prolaz: zaboravi "nema ga" i dohvati sto fali (radi u pozadini).
+/// Osvježi metapodatke: seriju (sve epizode), sezonu ili pojedinu stavku (film).
+///
+/// Skup se ne skuplja hodanjem kataloga (sezona u katalogu ume nositi samo broj),
+/// nego iz baze: po imenu serije ili po id-u stavke. Zatim se zaboravi riješeni
+/// naslov i poster, obriše keširana slika, pa prolaz dohvati iznova — novi URL
+/// nosi `?v=` pa i preglednik i televizor odmah vide novu sliku.
+async fn api_metadata_refresh(
+    State(state): State<AppState>,
+    axum::Json(tijelo): axum::Json<serde_json::Value>,
+) -> Response {
+    let id = tijelo.get("id").and_then(|vrijednost| vrijednost.as_str()).unwrap_or("");
+    if id.is_empty() {
+        return (StatusCode::BAD_REQUEST, "treba id").into_response();
+    }
+    // Serija (`s:slug`), sezona (`s:slug:2`) ili pojedina stavka (broj).
+    let (stavka_id, serija) = {
+        let catalog = state.catalog.read().await;
+        match catalog.get(id) {
+            Some(cvor) if cvor.is_container() => {
+                let ime = if cvor.parent_id.starts_with("s:") {
+                    catalog.get(&cvor.parent_id).map(|roditelj| roditelj.title.clone())
+                } else {
+                    Some(cvor.title.clone())
+                };
+                (None, ime)
+            }
+            Some(_) => (id.parse::<i64>().ok(), None),
+            None => (id.parse::<i64>().ok(), None),
+        }
+    };
+
+    let store = state.store.clone();
+    let enricher = state.enricher.clone();
+    let ocisceno = tokio::task::spawn_blocking(move || -> Result<usize, String> {
+        use rustiio_library::store::{items, titles};
+        let svi = items::by_kind(&store, "video", 20_000).map_err(|greska| greska.to_string())?;
+        let odabrani: Vec<i64> = match stavka_id {
+            Some(item_id) => vec![item_id],
+            None => match serija.as_deref().map(str::trim) {
+                Some(ime) if !ime.is_empty() => svi
+                    .iter()
+                    .filter(|red| red.series.as_deref().map(str::trim) == Some(ime))
+                    .map(|red| red.id)
+                    .collect(),
+                _ => Vec::new(),
+            },
+        };
+        for item_id in &odabrani {
+            titles::forget(&store, &titles::scope(None, *item_id))
+                .map_err(|greska| greska.to_string())?;
+            // Oznaka izvora mora biti prazna: `Some("none")` znaci "provjereno, slike
+            // nema" pa bi dopuna ovu stavku preskocila (found = 0, poster ostane null).
+            items::update_poster(&store, *item_id, None, None)
+                .map_err(|greska| greska.to_string())?;
+            enricher.forget(*item_id);
+        }
+        if let Some(ime) = serija.as_deref().map(str::trim).filter(|ime| !ime.is_empty()) {
+            titles::forget(&store, &titles::scope(Some(ime), 0))
+                .map_err(|greska| greska.to_string())?;
+        }
+        Ok(odabrani.len())
+    })
+    .await;
+
+    let broj = match ocisceno {
+        Ok(Ok(broj)) => broj,
+        Ok(Err(greska)) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("baza: {greska}")).into_response();
+        }
+        Err(greska) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("posao: {greska}")).into_response();
+        }
+    };
+    if broj == 0 {
+        return (StatusCode::NOT_FOUND, format!("nema stavki za {id}")).into_response();
+    }
+
+    let store = state.store.clone();
+    let enricher = state.enricher.clone();
+    let summary = tokio::task::spawn_blocking(move || {
+        rustiio_library::metadata::enrich::run_until_done(&store, &enricher, 25, true, 200)
+    })
+    .await;
+
+    let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone())
+        .with_catalog(state.catalog.clone())
+        .with_art_dir(state.enricher.art_dir().to_path_buf());
+    let poster = rustiio_cds::ArtLookup::art_url(&art, id);
+    match summary {
+        Ok(Ok(summary)) => {
+            info!(stavka = %id, stavki = broj, nadjeno = summary.found, "metapodaci osvjezeni");
+            axum::Json(json!({
+                "ok": true,
+                "items": broj,
+                "found": summary.found,
+                "missing": summary.missing,
+                "poster": poster,
+            }))
+            .into_response()
+        }
+        Ok(Err(greska)) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("dohvat: {greska}")).into_response()
+        }
+        Err(greska) => (StatusCode::INTERNAL_SERVER_ERROR, format!("posao: {greska}")).into_response(),
+    }
+}
+
 async fn api_posters_refresh(State(state): State<AppState>) -> Response {
     let store = state.store.clone();
     let enricher = state.enricher.clone();

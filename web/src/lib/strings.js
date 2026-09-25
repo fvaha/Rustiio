@@ -73,6 +73,10 @@ export const hr = {
     minutes: 'min',
     hours: 'h',
     days: 'd',
+    scan_hint: 'Skeniraj knjižnicu sada',
+    auto_scan: 'Knjižnica se skenira sama',
+    refresh_meta: 'Osvježi metapodatke',
+    refresh_meta_hint: 'Ponovno dohvati naslov i poster',
   },
   dashboard: {
     title: 'Pregled',
@@ -121,6 +125,10 @@ export const hr = {
     subtitles: 'Titlovi',
     added: 'Dodano',
     rules: 'pravila',
+    scan_hint: 'Skeniraj knjižnicu sada',
+    auto_scan: 'Knjižnica se skenira sama',
+    refresh_meta: 'Osvježi metapodatke',
+    refresh_meta_hint: 'Ponovno dohvati naslov i poster',
   },
   hw: {
     title: 'Stroj na kojem radi',
@@ -469,6 +477,10 @@ export const en = {
     minutes: 'min',
     hours: 'h',
     days: 'd',
+    scan_hint: 'Scan the library now',
+    auto_scan: 'Library scans itself',
+    refresh_meta: 'Refresh metadata',
+    refresh_meta_hint: 'Re-fetch title and poster',
   },
   dashboard: {
     title: 'Overview',
@@ -517,6 +529,10 @@ export const en = {
     subtitles: 'Subtitles',
     added: 'Added',
     rules: 'rules',
+    scan_hint: 'Scan the library now',
+    auto_scan: 'Library scans itself',
+    refresh_meta: 'Refresh metadata',
+    refresh_meta_hint: 'Re-fetch title and poster',
   },
   hw: {
     title: 'Machine it runs on',

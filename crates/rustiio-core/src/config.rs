@@ -172,6 +172,9 @@ pub struct LibrarySection {
     pub posters: bool,
     /// Prati mape i sam pokreni sken kad se datoteka doda ili obrise.
     pub watch: bool,
+    /// Auto-sken: minute izmedju dva skeniranja (`None` = 15, `0` = iskljuceno).
+    pub auto_scan_minutes: Option<u64>,
+
 }
 
 impl Default for LibrarySection {
@@ -185,6 +188,7 @@ impl Default for LibrarySection {
             recent_limit: 20,
             posters: true,
             watch: true,
+            auto_scan_minutes: None,
         }
     }
 }

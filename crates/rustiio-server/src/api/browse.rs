@@ -45,7 +45,8 @@ async fn api_browse(State(state): State<AppState>, Query(query): Query<BrowseQue
     let Some(node) = catalog.get(&id) else {
         return fail(StatusCode::NOT_FOUND, format!("nema objekta {id}"));
     };
-    let art = StoreArt::new(state.store.clone(), state.base_url.clone()).with_catalog(state.catalog.clone());
+    let art = StoreArt::new(state.store.clone(), state.base_url.clone()).with_catalog(state.catalog.clone())
+                .with_art_dir(state.enricher.art_dir().to_path_buf());
 
     let mut items: Vec<(bool, String, Value)> = catalog
         .children(&id)
@@ -91,7 +92,8 @@ async fn api_item(State(state): State<AppState>, Path(id): Path<String>) -> Resp
     let Some(node) = catalog.get(&id) else {
         return fail(StatusCode::NOT_FOUND, format!("nema objekta {id}"));
     };
-    let art = StoreArt::new(state.store.clone(), state.base_url.clone()).with_catalog(state.catalog.clone());
+    let art = StoreArt::new(state.store.clone(), state.base_url.clone()).with_catalog(state.catalog.clone())
+                .with_art_dir(state.enricher.art_dir().to_path_buf());
     axum::Json(json!({
         "item": project(node, &art, &state),
         "putanja": node.path.display().to_string(),

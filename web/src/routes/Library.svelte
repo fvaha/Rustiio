@@ -2,7 +2,7 @@
   // Knjižnica: mape, posteri, pretraga i "pusti". Isti sadržaj koji TV vidi
   // (`/api/browse`), pa nema razlike između onoga što TV pokaže i ovoga.
   import { t } from '../lib/i18n.svelte.js'
-  import { get } from '../lib/api.js'
+  import { get, post } from '../lib/api.js'
   import { toast } from '../lib/store.svelte.js'
   import { bytes, dateTime } from '../lib/format.js'
 
@@ -44,6 +44,24 @@
     trail = trail.slice(0, index + 1)
     selected = null
     load(target.id)
+  }
+
+  // Popis se sam osvjezava (auto-sken doda nove filmove i bez klika).
+  $effect(() => {
+    const sat = setInterval(() => load(), 60_000)
+    return () => clearInterval(sat)
+  })
+
+  /// Ponovno razriješi naslov i poster (isto za film i za seriju).
+  async function osvjeziMetapodatke(item, dogadjaj) {
+    dogadjaj?.stopPropagation?.()
+    try {
+      const odgovor = await post('/api/metadata/refresh', { id: item.id })
+      toast('ok', `${t('library.refresh_meta')}: ${odgovor?.found ?? 0}`)
+      await load()
+    } catch (error) {
+      toast('err', `${t('common.error')}: ${error.message}`)
+    }
   }
 
   async function copyLink(item) {
@@ -109,6 +127,8 @@
           }
         }}
       >
+        <button class="meta-refresh" title={t('library.refresh_meta_hint')}
+          onclick={(dogadjaj) => osvjeziMetapodatke(item, dogadjaj)}>⟳</button>
         {#if item.poster}
           <img class="img" src={item.poster} alt={item.title} loading="lazy" />
         {:else}
@@ -159,6 +179,7 @@
           <a class="btn primary" href={selected.play} target="_blank" rel="noreferrer">{t('library.play')}</a>
         {/if}
         <button class="btn" onclick={() => copyLink(selected)}>{t('library.copy_link')}</button>
+        <button class="btn" onclick={() => osvjeziMetapodatke(selected)}>{t('library.refresh_meta')}</button>
         <button class="btn" disabled title={t('library.on_tv_later')} style="opacity: 0.5">
           {t('library.on_tv')}
         </button>
@@ -166,3 +187,27 @@
     </div>
   </div>
 {/if}
+
+<style>
+  :global(.poster) {
+    position: relative;
+  }
+  .meta-refresh {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 2;
+    width: 26px;
+    height: 26px;
+    line-height: 1;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.55);
+    color: var(--foreground);
+    cursor: pointer;
+  }
+  .meta-refresh:hover {
+    background: var(--accent);
+    color: #fff;
+  }
+</style>

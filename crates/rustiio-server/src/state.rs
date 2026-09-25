@@ -432,3 +432,28 @@ pub fn enrich_posters(state: &AppState, batch: usize, mark_missing: bool, max_ba
         }
     }
 }
+
+/// Auto-sken u pozadini: knjiznica se sama osvjezi (novi film ne ceka rucni klik).
+///
+/// Interval je `library.auto_scan_minutes` (`None` = 15 minuta, `0` = iskljuceno).
+pub fn start_auto_scan(state: &AppState) {
+    let minuta = state.config.library.auto_scan_minutes.unwrap_or(15);
+    if minuta == 0 {
+        info!("auto-sken iskljucen (library.auto_scan_minutes = 0)");
+        return;
+    }
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        warn!("auto-sken nije pokrenut (nema tokio konteksta)");
+        return;
+    };
+    let state = state.clone();
+    handle.spawn(async move {
+        let period = std::time::Duration::from_secs(minuta * 60);
+        loop {
+            tokio::time::sleep(period).await;
+            let count = state.rescan().await;
+            info!(count, minuta, "auto-sken gotov");
+        }
+    });
+    info!(minuta, "auto-sken pokrenut");
+}

@@ -836,3 +836,13 @@ table.tbl td.n, table.tbl th.n { text-align: right; font-variant-numeric: tabula
   background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 35%, transparent));
 }
 .jezgre-brzi { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Sken knjiznice je glavna funkcija — gumb mora biti vidljiv, ne sitna ikonica. */
+.btn.scan {
+  width: 100%;
+  margin-top: 8px;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 600;
+  border-color: var(--accent);
+}
