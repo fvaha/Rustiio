@@ -275,8 +275,6 @@
               <tr>
                 <th>{t('devices.name')}</th>
                 <th>{t('devices.profile')}</th>
-                <th>{t('devices.seen')}</th>
-                <th class="right">{t('devices.requests')}</th>
                 <th></th>
               </tr>
             </thead>
@@ -290,6 +288,9 @@
                     </div>
                     <div class="sub mono cut" title={device.user_agent ?? ''}>
                       {device.ip}{device.user_agent ? ` · ${device.user_agent}` : ''}
+                    </div>
+                    <div class="meta muted small" title={dateTime(device.last_seen)}>
+                      {ago(device.last_seen)} · {device.requests}× {t('devices.requests')}
                     </div>
                   </td>
                   <td>
@@ -315,8 +316,6 @@
                       {/each}
                     </select>
                   </td>
-                  <td class="muted nowrap" title={dateTime(device.last_seen)}>{ago(device.last_seen)}</td>
-                  <td class="right">{device.requests}</td>
                   <td class="right nowrap">
                     <button class="btn ghost" onclick={() => showToml(device)} title={t('devices.toml_hint')}>
                       {opened === device.key ? '▾' : '▸'} TOML
