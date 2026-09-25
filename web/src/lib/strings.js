@@ -26,6 +26,7 @@ export const hr = {
     width_hint: 'Povuci za širinu (ili strelice lijevo/desno)',
   },
   common: {
+    remove: 'Ukloni',
     refresh: 'Osvježi',
     save: 'Spremi',
     saved: 'Spremljeno',
@@ -319,6 +320,7 @@ export const en = {
     width_hint: 'Drag for width (or left/right arrows)',
   },
   common: {
+    remove: 'Remove',
     refresh: 'Refresh',
     save: 'Save',
     saved: 'Saved',

@@ -413,6 +413,8 @@ mod tests {
             base_url: "http://127.0.0.1:8200",
             max_results: 100,
             views: false,
+            view_list: &[],
+            language: "hr",
             recent_limit: 5,
             playback: None,
             art: None,

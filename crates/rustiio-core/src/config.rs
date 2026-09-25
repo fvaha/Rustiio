@@ -162,6 +162,10 @@ pub struct LibrarySection {
     pub max_depth: u32,
     /// Virtualne kategorije na vrhu (Video / Muzika / Slike / Nedavno dodano).
     pub views: bool,
+    /// Koje se virtualne kategorije nude na televizorima: `movies`, `series`,
+    /// `video`, `recent`, `audio`, `image` (može i `v:movies`). Prazno → filmovi i serije.
+    #[serde(default)]
+    pub view_list: Vec<String>,
     /// Koliko objekata ide u "Nedavno dodano".
     pub recent_limit: u32,
     /// Dohvacaj postera u pozadini (uz datoteku, pa TMDB/Wikipedia/TVmaze/Cover Art).
@@ -177,6 +181,7 @@ impl Default for LibrarySection {
             video_extensions: default_video_extensions(),
             max_depth: 8,
             views: true,
+            view_list: Vec::new(),
             recent_limit: 20,
             posters: true,
             watch: true,

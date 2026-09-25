@@ -46,8 +46,12 @@ pub struct BrowseOptions<'a> {
     pub base_url: &'a str,
     /// Gornja granica objekata u odgovoru.
     pub max_results: u32,
-    /// Prikazuj virtualne kategorije (Video/Muzika/Slike/Nedavno dodano).
+    /// Prikazuj virtualne kategorije (Filmovi/Serije/Video/Nedavno dodano).
     pub views: bool,
+    /// Koje kategorije točno (imena iz `library.view_list`; prazno → filmovi i serije).
+    pub view_list: &'a [String],
+    /// Jezik naslova koje TV vidi (`hr`/`en`).
+    pub language: &'a str,
     /// Koliko objekata ide u "Nedavno dodano".
     pub recent_limit: u32,
     /// Ako uredjaj ne moze original, server daje drugu putanju (transcode).
@@ -62,6 +66,8 @@ impl std::fmt::Debug for BrowseOptions<'_> {
             .field("base_url", &self.base_url)
             .field("max_results", &self.max_results)
             .field("views", &self.views)
+            .field("view_list", &self.view_list)
+            .field("language", &self.language)
             .field("recent_limit", &self.recent_limit)
             .field("playback", &self.playback.is_some())
             .field("art", &self.art.is_some())
@@ -75,6 +81,8 @@ impl Default for BrowseOptions<'_> {
             base_url: "",
             max_results: MAX_RESULTS,
             views: true,
+            view_list: &[],
+            language: "hr",
             recent_limit: 20,
             playback: None,
             art: None,
@@ -187,8 +195,8 @@ pub fn browse(
 
     let mut children = catalog.children(object_id);
     if object_id == "0" && options.views {
-        for view in views::ALL {
-            children.push(view.node());
+        for view in views::list(options.view_list) {
+            children.push(view.node(options.language));
         }
         order_root_children(&mut children, &request.sort_criteria);
     } else {
@@ -224,7 +232,12 @@ fn paginate(
 }
 
 fn view_object(view: View, catalog: &Catalog, options: &BrowseOptions<'_>) -> Object {
-    Object::container(view.id(), "0", view.title(), view.count(catalog, options.recent_limit))
+    Object::container(
+        view.id(),
+        "0",
+        view.title(options.language),
+        view.count(catalog, options.recent_limit),
+    )
 }
 
 /// Pretvori cvor kataloga u DIDL objekt s resursima (i titlom, ako ga ima).
@@ -373,6 +386,8 @@ mod tests {
             base_url: "http://10.0.0.1:8200",
             max_results: MAX_RESULTS,
             views: true,
+            view_list: &[],
+            language: "hr",
             recent_limit: 20,
             playback: None,
             art: None,
@@ -388,6 +403,28 @@ mod tests {
     }
 
     #[test]
+    fn chosen_categories_and_english_titles_reach_the_tv() {
+        let dir = temp_dir("izbor");
+        std::fs::write(dir.join("A.mkv"), b"x").unwrap();
+        let catalog = catalog_with(&dir);
+
+        let lista = vec!["video".to_string(), "recent".to_string()];
+        let mut opts = options();
+        opts.view_list = &lista;
+        opts.language = "en";
+        let out = browse(&catalog, &children_request("0"), &opts).expect("browse");
+
+        for title in ["Video", "Recently added"] {
+            assert!(out.didl.contains(&format!("<dc:title>{title}</dc:title>")), "fali {title}");
+        }
+        // „Filmovi" se ovdje pojavljuje kao ime prave mape iz testa, pa se ne traži.
+        for gone in ["Serije", "Movies", "Nedavno dodano"] {
+            assert!(!out.didl.contains(&format!("<dc:title>{gone}</dc:title>")), "{gone} ne treba");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn browse_root_returns_storage_folder_and_categories() {
         let dir = temp_dir("root");
         std::fs::write(dir.join("A.mkv"), b"x").unwrap();
@@ -397,14 +434,15 @@ mod tests {
         assert_eq!(out.total, 3, "1 mapa + 2 kategorije");
         assert!(out.didl.contains("<dc:title>Filmovi</dc:title>"));
         assert!(out.didl.contains("object.container.storageFolder"));
-        for title in ["Video", "Nedavno dodano"] {
+        // Zadano: Filmovi i Serije (ne više generični „Video").
+        for title in ["Filmovi", "Serije"] {
             assert!(out.didl.contains(&format!("<dc:title>{title}</dc:title>")), "fali {title}");
         }
-        for gone in ["Muzika", "Slike"] {
+        for gone in ["Muzika", "Slike", "Nedavno dodano"] {
             assert!(!out.didl.contains(&format!("<dc:title>{gone}</dc:title>")), "{gone} ne treba");
         }
         // kategorije idu prije pravih mapa
-        assert!(out.didl.find("v:video").unwrap() < out.didl.find("<dc:title>Filmovi</dc:title>").unwrap());
+        assert!(out.didl.find("v:movies").unwrap() < out.didl.find("v:series").unwrap());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

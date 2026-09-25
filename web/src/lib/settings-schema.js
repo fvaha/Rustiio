@@ -130,9 +130,20 @@ export const FIELDS = {
     max: 32,
   },
   'library.views': {
-    label: { hr: 'Virtualne mape', en: 'Virtual folders' },
-    help: { hr: 'Nedavno dodano, Omiljeno, Po žanru — popisi koji se računaju iz baze.', en: 'Recently added, Favourites, By genre — listings computed from the database.' },
+    label: { hr: 'Virtualne mape na TV-u', en: 'Virtual folders on TV' },
+    help: {
+      hr: 'Glavni prekidač: kad je isključeno, TV vidi samo tvoje mape.',
+      en: 'Master switch: when off, the TV sees only your own folders.',
+    },
     type: 'bool',
+  },
+  'library.view_list': {
+    label: { hr: 'Što TV vidi na vrhu', en: 'What the TV shows at the top' },
+    help: {
+      hr: 'Dodaj kategorije koje želiš: movies (filmovi), series (serije), video, recent (nedavno dodano), audio, image. Prazno → filmovi i serije.',
+      en: 'Add the categories you want: movies, series, video, recent, audio, image. Empty → movies and series.',
+    },
+    type: 'tags',
   },
   'library.recent_limit': {
     label: { hr: 'Koliko u „Nedavno"', en: '"Recently added" size' },
