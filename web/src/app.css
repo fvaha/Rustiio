@@ -495,7 +495,30 @@ table.tbl td.n, table.tbl th.n { text-align: right; font-variant-numeric: tabula
   .page select,
   .page textarea { width: 100% !important; max-width: 100% !important; }
   .panel-body, .logs, .log { overflow-x: auto; }
-  .tbl-wrap, table.tbl { display: block; overflow-x: auto; white-space: nowrap; }
+  /* Tablice na telefonu: umjesto vodoravnog klizanja, svaki redak postaje
+     kartica (zaglavlje se skriva) — inače su Uređaji nabacani i nečitljivi. */
+  table.tbl { display: block; white-space: normal; }
+  table.tbl thead { display: none; }
+  table.tbl tbody { display: block; }
+  table.tbl tr {
+    display: block;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius, 10px);
+    background: var(--surface-2, transparent);
+  }
+  table.tbl td,
+  table.tbl th {
+    display: block;
+    padding: 2px 0;
+    border: 0;
+    white-space: normal;
+  }
+  table.tbl td.right { text-align: left; }
+  table.tbl td:empty { display: none; }
+  table.tbl .assign { max-width: 100%; }
+  table.tbl .cut { max-width: 100%; }
   .topbar { flex-wrap: wrap; }
   .mobile-tabs { -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .mobile-tabs::-webkit-scrollbar { display: none; }

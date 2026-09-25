@@ -53,6 +53,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/profiles/reload", post(api_profiles_reload))
         .route("/api/profiles/{id}", put(api_profile_save))
         .route("/api/profiles/{id}/reset", post(api_profile_reset))
+        .route("/api/profiles/{id}/delete", post(api_profile_delete))
         .route("/api/device-profile", put(api_device_profile))
         .route("/api/profile/{key}", get(api_profile_for_device).post(crate::api::profiles::save))
         .route("/api/streams", get(api_streams))
@@ -862,6 +863,55 @@ async fn api_profile_reset(State(state): State<AppState>, Path(id): Path<String>
     axum::Json(json!({ "ok": true, "profile": id, "profiles": broj })).into_response()
 }
 
+/// Izbriši profil: briše `<profiles_dir>/<id>.toml` i skida ga s uređaja.
+///
+/// Ugrađeni profil bez datoteke nema se što izbrisati — njega se samo vraća na
+/// zadana pravila (`/reset`), pa tu vraćamo jasnu grešku umjesto tihe laži.
+async fn api_profile_delete(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    let (postoji, ugradjen) = {
+        let profiles = state.profiles.read().await;
+        let postoji = profiles.all().iter().any(|profile| profile.id == id);
+        let ugradjen =
+            rustiio_profiles::builtin::load().all().iter().any(|profile| profile.id == id);
+        (postoji, ugradjen)
+    };
+    if !postoji {
+        return (StatusCode::NOT_FOUND, format!("nepoznat profil: {id}")).into_response();
+    }
+
+    let putanja = state.profiles_dir().join(format!("{id}.toml"));
+    if !putanja.exists() {
+        return (
+            StatusCode::BAD_REQUEST,
+            format!("profil {id} je ugrađen i nema svoju datoteku — koristi „vrati na ugrađeno“"),
+        )
+            .into_response();
+    }
+    if let Err(error) = std::fs::remove_file(&putanja) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("brisanje {}: {error}", putanja.display()))
+            .into_response();
+    }
+
+    // Uređaji koji su koristili taj profil vraćaju se na prepoznavanje.
+    let ocisceno = rustiio_library::store::devices::clear_profile_choice(&state.store, &id).unwrap_or(0);
+    let broj = state.reload_profiles().await;
+    info!(
+        profile = %id,
+        file = %putanja.display(),
+        devices = ocisceno,
+        builtin = ugradjen,
+        "profil izbrisan"
+    );
+    axum::Json(json!({
+        "ok": true,
+        "profile": id,
+        "profiles": broj,
+        "devices_cleared": ocisceno,
+        "builtin": ugradjen,
+    }))
+    .into_response()
+}
+
 #[derive(serde::Deserialize)]
 struct DeviceProfileBody {
     key: String,
@@ -898,6 +948,11 @@ async fn api_device_profile(
 }
 
 async fn api_profiles(State(state): State<AppState>) -> Response {
+    let dir = state.profiles_dir();
+    // Ugrađeni profili nemaju datoteku; oni s datotekom su ili korisnički ili
+    // izmijenjeni ugrađeni — zato sučelje nudi „izbriši", odnosno „vrati na ugrađeno".
+    let ugradjeni: std::collections::HashSet<String> =
+        rustiio_profiles::builtin::load().all().iter().map(|profile| profile.id.clone()).collect();
     let profiles = state.profiles.read().await;
     let list: Vec<_> = profiles
         .all()
@@ -906,6 +961,8 @@ async fn api_profiles(State(state): State<AppState>) -> Response {
             json!({
                 "id": profile.id,
                 "name": profile.name,
+                "file": dir.join(format!("{}.toml", profile.id)).exists(),
+                "builtin": ugradjeni.contains(&profile.id),
                 "description": profile.description,
                 "containers": profile.video.containers,
                 "video_codecs": profile.video.codecs,
@@ -931,7 +988,6 @@ async fn api_profiles(State(state): State<AppState>) -> Response {
             })
         })
         .collect();
-    let dir = state.profiles_dir();
     axum::Json(json!({
         "count": list.len(),
         "dir": dir.display().to_string(),
@@ -1230,8 +1286,11 @@ async fn api_decision(
         "profile_name": profile.name,
         "mode": summary.as_ref().map(|(mode, _)| mode.clone()),
         "reasons": summary.as_ref().map(|(_, reasons)| reasons.clone()),
-        "resource": match summary {
-            Some((mode, _)) if !mode.starts_with("direct") => PlaybackEngine::transcode_path(&node),
+        // Ista putanja koju TV dobiva u DIDL-u (ekstenzija izlaznog kontejnera).
+        "resource": match engine.decision(&node) {
+            Some(odluka) if !matches!(odluka.mode, PlaybackMode::Direct) => {
+                PlaybackEngine::transcode_path_for(&node, &odluka.container)
+            }
             _ => format!("/res/{}/{file_name}", node.id),
         },
         "media": info.map(|info| json!({

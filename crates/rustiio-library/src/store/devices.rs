@@ -71,6 +71,18 @@ pub fn set_profile_choice(store: &Store, key: &str, profile_id: &str) -> rusqlit
     Ok(())
 }
 
+/// Očisti izbor profila na svim uređajima koji su ga koristili.
+///
+/// Nakon brisanja profila uređaj ne smije ostati vezan na nešto što ne postoji —
+/// vraća se na automatsko prepoznavanje. Vraća broj očišćenih uređaja.
+pub fn clear_profile_choice(store: &Store, profile_id: &str) -> rusqlite::Result<usize> {
+    let conn = store.conn();
+    conn.execute(
+        "UPDATE devices SET profile_choice = '' WHERE profile_choice = ?1",
+        params![profile_id.trim()],
+    )
+}
+
 /// Izabrani profil za uređaj (None = automatski).
 pub fn profile_choice(store: &Store, key: &str) -> rusqlite::Result<Option<String>> {
     let conn = store.conn();
@@ -187,5 +199,23 @@ mod tests {
         // Prazno polje vraca automatsko prepoznavanje.
         set_profile_choice(&store, kljuc, "").expect("brisanje");
         assert_eq!(profile_choice(&store, kljuc).expect("citanje"), None);
+    }
+
+    #[test]
+    fn brisanje_profila_brise_i_izbore_na_uredjajima() {
+        let store = Store::open_memory().expect("baza");
+        set_profile_choice(&store, "ua:Samsung", "moj-profil").expect("prvi");
+        set_profile_choice(&store, "ua:VLC", "moj-profil").expect("drugi");
+        set_profile_choice(&store, "ua:Kodi", "vlc").expect("treci");
+
+        let ocisceno = clear_profile_choice(&store, "moj-profil").expect("ciscenje");
+        assert_eq!(ocisceno, 2, "obrisana su dva uredjaja koja su koristila profil");
+        assert_eq!(profile_choice(&store, "ua:Samsung").expect("citanje"), None);
+        assert_eq!(profile_choice(&store, "ua:VLC").expect("citanje"), None);
+        assert_eq!(
+            profile_choice(&store, "ua:Kodi").expect("citanje").as_deref(),
+            Some("vlc"),
+            "tudji izbor se ne dira"
+        );
     }
 }

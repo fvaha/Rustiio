@@ -44,6 +44,23 @@ impl<'a> PlaybackEngine<'a> {
         format!("/tr/{}/{}", node.id, escape_path_segment(&node.file_name()))
     }
 
+    /// Putanja transcode resursa s ekstenzijom onoga što stvarno izlazi.
+    ///
+    /// Samsung (i drugi TV-i) gledaju **ekstenziju**, ne samo MIME: URL koji
+    /// završava na `.mkv`, a nosi MPEG-TS stream, prijave kao „format nije
+    /// podržan". Zato ime dobiva ekstenziju izlaznog kontejnera.
+    pub fn transcode_path_for(node: &Node, container: &str) -> String {
+        let ekstenzija = match container {
+            "mpegts" | "ts" => "ts",
+            "mp4" | "m4v" => "mp4",
+            "matroska" | "webm" | "mkv" => "mkv",
+            drugo => drugo,
+        };
+        let ime = node.file_name();
+        let osnova = ime.rsplit_once('.').map(|(prije, _)| prije.to_string()).unwrap_or(ime);
+        format!("/tr/{}/{}.{}", node.id, escape_path_segment(&osnova), ekstenzija)
+    }
+
     /// Odluka za cvor; `None` ako nema metapodataka (tada se ide na direct play).
     pub fn decision(&self, node: &Node) -> Option<Decision> {
         if node.kind == NodeKind::Container || node.kind == NodeKind::Image {
@@ -107,7 +124,7 @@ impl PlaybackResolver for PlaybackEngine<'_> {
             // Uredjaj moze original — ne diramo nista.
             PlaybackMode::Direct => None,
             _ => Some(Playback {
-                path: Self::transcode_path(node),
+                path: Self::transcode_path_for(node, &decision.container),
                 protocol_info: decision.protocol_info.clone(),
             }),
         }
@@ -179,7 +196,8 @@ mod tests {
         let engine = PlaybackEngine::new(&profile, &hw, &media, true);
 
         let playback = engine.resolve(&node("/media/film.mp4")).expect("mora transcode");
-        assert_eq!(playback.path, "/tr/7/film.mp4");
+        // Izlaz je MPEG-TS, pa i ime nosi `.ts` — Samsung gleda ekstenziju.
+        assert_eq!(playback.path, "/tr/7/film.ts");
         assert!(playback.protocol_info.contains("video/mp2t"), "{}", playback.protocol_info);
     }
 
@@ -191,5 +209,17 @@ mod tests {
         let hw = hw();
         let engine = PlaybackEngine::new(&profile, &hw, &media, false);
         assert!(engine.resolve(&node("/media/film.mp4")).is_none());
+    }
+    #[test]
+    fn transcode_url_nosi_ekstenziju_izlaznog_kontejnera() {
+        // Samsung gleda ekstenziju: `.mkv` uz MPEG-TS stream = „format nije podrzan".
+        let film = node("/filmovi/Film (2019).mkv");
+        let ts = PlaybackEngine::transcode_path_for(&film, "mpegts");
+        assert!(ts.starts_with("/tr/7/"), "{ts}");
+        assert!(ts.ends_with(".ts"), "MPEG-TS izlaz mora imati .ts: {ts}");
+        assert!(ts.contains("Film%20(2019)"), "ime se enkodira: {ts}");
+        assert!(PlaybackEngine::transcode_path_for(&film, "mp4").ends_with(".mp4"));
+        // Nepoznat kontejner se ne izmislja.
+        assert!(PlaybackEngine::transcode_path_for(&film, "avi").ends_with(".avi"));
     }
 }

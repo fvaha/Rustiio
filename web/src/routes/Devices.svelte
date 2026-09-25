@@ -5,6 +5,7 @@
   import { t } from '../lib/i18n.svelte.js'
   import { store, refreshProfiles, refreshDevices, toast } from '../lib/store.svelte.js'
   import { get, post, put } from '../lib/api.js'
+  import Icon from '../components/Icon.svelte'
   import { ago, dateTime } from '../lib/format.js'
 
   let opened = $state('')
@@ -97,6 +98,43 @@
   // ── Pravila profila: dubina boje i ostalo se mijenja po uređaju ──────────
   let editId = $state('')
   let pravila = $state(null)
+  // Potvrda brisanja ide kroz mali dijalog — radi i na dodir i u desktop aplikaciji.
+  let potvrda = $state(null)
+  const izabraniProfil = $derived(profiles.find((item) => item.id === editId) ?? null)
+
+  function traziPotvrdu(profile) {
+    if (!profile) return
+    potvrda = { id: profile.id, ime: profile.name || profile.id }
+  }
+
+  async function potvrdiBrisanje() {
+    const id = potvrda?.id
+    potvrda = null
+    if (id) await izbrisiProfil(id)
+  }
+
+  /// Izbriši profil (datoteku) i vrati uređaje koji su ga koristili na automatski.
+  async function izbrisiProfil(id) {
+    if (!id) return
+    try {
+      const rezultat = await post(`/api/profiles/${encodeURIComponent(id)}/delete`, {})
+      const ocisceno = rezultat?.devices_cleared ?? 0
+      // Uređaji koji su koristili profil ostaju bez njega — poslije im se bira drugi.
+      toast(
+        'ok',
+        ocisceno
+          ? `${t('devices.deleted')}: ${id} · ${ocisceno} ${t('devices.left_without')}`
+          : `${t('devices.deleted')}: ${id}`,
+      )
+      if (editId === id) {
+        editId = ''
+        pravila = null
+      }
+      await Promise.all([refreshProfiles(), refreshDevices()])
+    } catch (error) {
+      toast('err', `${t('common.error')}: ${error.message}`)
+    }
+  }
 
   /// Učitaj pravila profila u obrazac (popisi kao tekst odvojen zarezom).
   function ucitajPravila(id) {
@@ -230,9 +268,15 @@
                     </div>
                   </td>
                   <td>
+                    <!-- Jedan profil po uređaju: izabrani ako postoji, inače prepoznati. -->
                     <div class="prof">
-                      <span class="tag accent">{device.profile || '—'}</span>
-                      {#if device.profile_choice}<span class="tag ok" title={t('devices.chosen')}>{t('devices.chosen')}</span>{/if}
+                      {#if device.profile_choice}
+                        <span class="tag accent">{device.profile_choice}</span>
+                        <span class="tag ok" title={t('devices.assign_hint')}>{t('devices.chosen')}</span>
+                      {:else}
+                        <span class="tag">{device.profile || t('devices.no_profile')}</span>
+                        <span class="tag muted-tag" title={t('devices.profile_auto')}>{t('devices.profile_auto')}</span>
+                      {/if}
                     </div>
                     <select
                       class="select sm assign"
@@ -302,6 +346,19 @@
               <span class="tag" class:ok={ruleCount(profile) > 0} title={t('devices.rules_hint')}>
                 {ruleCount(profile)} {t('library.rules')}
               </span>
+              {#if profile.file}
+                <span class="tag warm" title={t('devices.delete_hint')}>
+                  {profile.builtin ? t('devices.modified') : t('devices.user_profile')}
+                </span>
+                <button
+                  class="icon-btn danger"
+                  title={t('devices.delete_hint')}
+                  aria-label={t('devices.delete')}
+                  onclick={() => traziPotvrdu(profile)}
+                >
+                  <Icon name="trash" size={15} />
+                </button>
+              {/if}
             </div>
           {/each}
         </div>
@@ -385,12 +442,43 @@
 
         <div class="akcije">
           <button class="btn" onclick={spremiPravila}>{t('devices.save_rules')}</button>
-          <button class="btn ghost" onclick={vratiUgradeno}>{t('devices.reset_rules')}</button>
+          {#if izabraniProfil?.file && izabraniProfil?.builtin}
+            <button class="btn ghost" onclick={vratiUgradeno}>{t('devices.reset_rules')}</button>
+          {/if}
+          {#if izabraniProfil?.file}
+            <button
+              class="btn ghost opasno"
+              title={t('devices.delete_hint')}
+              onclick={() => traziPotvrdu(izabraniProfil)}
+            >
+              <Icon name="trash" size={15} />
+              {t('devices.delete')}
+            </button>
+          {/if}
         </div>
       {/if}
     </div>
   </div>
 </div>
+
+{#if potvrda}
+  <div class="modal">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-label={t('devices.confirm_delete')}>
+      <div class="modal-title">{t('devices.confirm_delete')}</div>
+      <div class="modal-text">
+        {potvrda.ime} <span class="mono muted">({potvrda.id})</span>
+      </div>
+      <div class="modal-note muted small">{t('devices.confirm_hint')}</div>
+      <div class="akcije">
+        <button class="btn opasno" onclick={potvrdiBrisanje}>
+          <Icon name="trash" size={15} />
+          {t('devices.delete')}
+        </button>
+        <button class="btn ghost" onclick={() => (potvrda = null)}>{t('devices.cancel')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   /* Tablica unutar kartice ne smije rasti u nedogled — pomiče se sama. */
@@ -479,6 +567,66 @@
   }
   /* Izbor profila stoji ispod oznake u stupcu Profil — u stupcu akcija je bio
      odrezan desno, izvan kartice. */
+  /* Brisanje je nepovratno — crveno i uz potvrdu. */
+  .btn.opasno {
+    color: var(--err, #e5484d);
+    border-color: color-mix(in srgb, var(--err, #e5484d) 45%, transparent);
+  }
+  .icon-btn {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm, 6px);
+    color: var(--muted-foreground);
+    cursor: pointer;
+  }
+  .icon-btn.danger:hover,
+  .icon-btn.danger:focus-visible {
+    color: var(--err, #e5484d);
+    border-color: color-mix(in srgb, var(--err, #e5484d) 50%, transparent);
+    background: color-mix(in srgb, var(--err, #e5484d) 12%, transparent);
+  }
+  .tag.muted-tag {
+    color: var(--muted-foreground);
+    border-style: dashed;
+  }
+  /* Dijalog potvrde */
+  .modal {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    background: color-mix(in srgb, #000 55%, transparent);
+  }
+  .modal-box {
+    width: min(420px, 100%);
+    padding: 18px;
+    background: var(--card, var(--surface));
+    border: 1px solid var(--line);
+    border-radius: var(--radius, 10px);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  }
+  .modal-title {
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .modal-text {
+    margin-bottom: 8px;
+    word-break: break-word;
+  }
+  .modal-note {
+    line-height: 1.45;
+    margin-bottom: 14px;
+  }
+  .tag.warm {
+    color: var(--warn, #f5a524);
+  }
   .assign {
     display: block;
     max-width: 210px;

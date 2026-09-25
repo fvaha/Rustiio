@@ -156,7 +156,10 @@ pub fn decide(
 /// Remux: samo kontejner, `-c copy`. Nema PN-a (stream nije originalni fajl).
 fn remux_decision(profile: &Profile, reasons: Vec<String>, hw: &HwSupport, media: &MediaInfo) -> Decision {
     let (mime, container) = output_container(profile);
-    let info = ProtocolInfo::new(mime).with_op(&profile.dlna.op).with_flags(&profile.dlna.flags);
+    let mut info = ProtocolInfo::new(mime).with_op(&profile.dlna.op).with_flags(&profile.dlna.flags);
+    // CI=1: sadrzaj je konverzija, ne original. Bez toga TV primijeni pravila za
+    // original i stream mu „ne odgovara" (Samsung to prijavi kao gresku formata).
+    info.ci = Some("1".to_string());
     Decision {
         mode: PlaybackMode::Remux,
         reasons,
@@ -222,7 +225,10 @@ fn transcode_decision(
     let (mime, container) = output_container(profile);
 
     // Za transcode NEMA DLNA.ORG_PN — profil je taj koji garantira da stream ide.
-    let info = ProtocolInfo::new(mime).with_op(&profile.dlna.op).with_flags(&profile.dlna.flags);
+    let mut info = ProtocolInfo::new(mime).with_op(&profile.dlna.op).with_flags(&profile.dlna.flags);
+    // CI=1: sadrzaj je konverzija, ne original. Bez toga TV primijeni pravila za
+    // original i stream mu „ne odgovara" (Samsung to prijavi kao gresku formata).
+    info.ci = Some("1".to_string());
 
     // Sta se ne re-enkodira, to se kopira (`-c:v copy` / `-c:a copy`).
     // Korisnikov izričit odabir enkodera ima prednost — ali samo ako je isti kodek
