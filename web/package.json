@@ -1,7 +1,7 @@
 {
   "name": "rustiio-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "Web sučelje Rustiio — Svelte 5 + Vite, build ide u binarni fajl (web/dist)",
   "scripts": {
