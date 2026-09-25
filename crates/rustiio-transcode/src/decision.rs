@@ -204,6 +204,9 @@ fn remux_decision(profile: &Profile, reasons: Vec<String>, hw: &HwSupport, media
 fn output_container(profile: &Profile) -> (&'static str, &'static str) {
     match profile.transcode.container.as_str() {
         "mp4" => ("video/mp4", "mp4"),
+        // MKV: TV (MU6172) pusta MKV i kad je stream; `mpegts` mu se prikaze
+        // kao "mp2t" i ne pokrene se, pa kontejner mora biti matroska.
+        "mkv" => ("video/x-matroska", "matroska"),
         // Uz `DLNA.ORG_PN=MPEG_TS_*` ide MIME `video/mpeg`. Samsung na `video/mp2t`
         // prijavi grešku formata (u informacijama onda piše "mp2t" i `.ts`).
         _ if profile.transcode.video_codec.eq_ignore_ascii_case("mpeg2video") => {
@@ -255,7 +258,7 @@ fn transcode_decision(
 
     // Za transcode NEMA DLNA.ORG_PN — profil je taj koji garantira da stream ide.
     // OP=00: live stream nema poznatu velicinu ni Range, pa se NE smije
-    // oglasavati byte-seek (OP=01) — Samsung takav res odbije (samo HEAD, bez GET-a).
+    // oglasavati byte-seek (OP=00) — Samsung takav res odbije (samo HEAD, bez GET-a).
     let mut info = ProtocolInfo::new(mime).with_op("00").with_flags(&profile.dlna.flags);
     // CI=1: sadrzaj je konverzija, ne original. Bez toga TV primijeni pravila za
     // original i stream mu „ne odgovara" (Samsung to prijavi kao gresku formata).

@@ -483,11 +483,11 @@ mod tests {
     }
 
     #[test]
-    fn nvenc_args_carry_rate_control_and_low_latency() {
+    fn nvenc_args_carry_rate_control_and_hq_tune() {
         let args = encoder_args(HwAccel::Nvenc, 8000, false);
         let joined = args.join(" ");
         assert!(joined.contains("-b:v 8000k"), "{joined}");
-        assert!(joined.contains("-maxrate 9600k"), "{joined}");
+        assert!(joined.contains("-maxrate 12000k"), "{joined}");
         assert!(joined.contains("-bufsize 16000k"), "{joined}");
         assert!(joined.contains("-preset p4"), "{joined}");
         assert!(!joined.contains("pix_fmt"), "NVENC ne trazi yuv420p");
