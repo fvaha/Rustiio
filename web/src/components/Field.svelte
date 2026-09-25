@@ -5,7 +5,7 @@
   import FolderPicker from './FolderPicker.svelte'
   import Icon from './Icon.svelte'
 
-  let { path, meta, value, changed = false, onchange } = $props()
+  let { path, meta, value, changed = false, onchange, hw = null } = $props()
 
   // Jezik polja dolazi iz odabranog jezika sučelja. Prije je pisalo
   // `t('field.en')`, a to nije ključ u rječniku pa `t()` vrati sam tekst
@@ -136,6 +136,52 @@
           onclick={() => onchange(!value)}
         ></button>
         <span class="hint">{value === true ? t('field.on') : t('field.off')}</span>
+      </div>
+
+    {:else if type === 'cards'}
+      <div class="izbor">
+        {#each meta.options ?? [] as option}
+          {@const vrijednost = typeof option === 'object' ? option.value : option}
+          {@const dostupno = !hw?.modes || hw.modes.includes(vrijednost)}
+          <button
+            class="izbor-kartica"
+            class:aktivno={String(value ?? '') === String(vrijednost)}
+            disabled={!dostupno}
+            onclick={() => onchange(vrijednost)}
+          >
+            <span class="izbor-naslov">{text(option.label) || vrijednost}</span>
+            <span class="izbor-opis">{text(option.hint)}</span>
+            {#if !dostupno}<span class="izbor-znak">{t('field.unavailable')}</span>{/if}
+          </button>
+        {/each}
+      </div>
+
+    {:else if type === 'cores'}
+      {@const najvise = hw?.cpu?.threads ?? meta.max ?? 32}
+      {@const prazno = value === null || value === undefined || value === 0}
+      {@const odabrano = prazno ? najvise : Math.min(value, najvise)}
+      <div class="jezgre">
+        <div class="jezgre-vrh">
+          <span class="jezgre-broj">{odabrano}</span>
+          <span class="hint">{prazno ? t('field.all_cores') : t('field.cores_word')}</span>
+          <span class="muted small">/ {najvise}</span>
+        </div>
+        <div class="jezgre-traka">
+          {#each Array(najvise) as _, index}
+            <button
+              class="jezgra"
+              class:upaljena={index < odabrano}
+              title={String(index + 1)}
+              aria-label={String(index + 1)}
+              onclick={() => onchange(index + 1)}
+            ></button>
+          {/each}
+        </div>
+        <div class="jezgre-brzi">
+          <button class="btn ghost" onclick={() => onchange(najvise)}>{t('field.all')}</button>
+          <button class="btn ghost" onclick={() => onchange(Math.max(1, Math.floor(najvise / 2)))}>½</button>
+          <button class="btn ghost" onclick={() => onchange(0)}>{t('field.auto')}</button>
+        </div>
       </div>
 
     {:else if type === 'enum'}

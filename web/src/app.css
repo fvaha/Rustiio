@@ -765,3 +765,74 @@ table.tbl td.n, table.tbl th.n { text-align: right; font-variant-numeric: tabula
     grid-column: 1 / -1 !important;
   }
 }
+
+/* ── Stroj na kojem Rustiio radi (izbor grafička/procesor) ────────────────── */
+.hw {
+  border: 1px solid var(--line);
+  border-radius: var(--radius, 12px);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.006));
+}
+.hw-glava { display: flex; align-items: baseline; gap: 10px; margin-bottom: 11px; }
+.hw-os { margin-left: auto; font-size: 11px; color: var(--faint); letter-spacing: 0.06em; text-transform: uppercase; }
+.hw-redci { display: grid; gap: 8px; }
+.hw-redak { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; }
+.hw-kljuc { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.hw-vrijednost { font-weight: 500; font-size: 13.5px; overflow-wrap: anywhere; }
+.hw-znak {
+  font-size: 11.5px; color: var(--dim); border: 1px solid var(--line);
+  border-radius: 999px; padding: 2px 9px; white-space: nowrap;
+}
+.hw-znak.ok { color: #34d399; border-color: rgba(52, 211, 153, 0.4); }
+.hw-znak.ne { color: #f87171; border-color: rgba(248, 113, 113, 0.4); }
+.hw-znakovi { display: flex; gap: 6px; flex-wrap: wrap; }
+.hw-dno {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line);
+}
+.hw-preporuka { font-size: 12.5px; color: var(--dim); }
+@media (max-width: 700px) {
+  .hw-redak { grid-template-columns: 1fr; gap: 2px; }
+}
+
+/* ── Način rada kao kartice (Automatski / Grafička / Kombinirano / Procesor) ─ */
+.izbor { display: grid; grid-template-columns: repeat(auto-fit, minmax(154px, 1fr)); gap: 8px; max-width: 620px; }
+.izbor-kartica {
+  text-align: left; display: grid; gap: 3px; padding: 11px 13px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--radius-sm, 10px);
+  background: transparent; color: var(--fg); font: inherit;
+  transition: border-color 0.15s var(--ease, ease), background 0.15s var(--ease, ease), transform 0.15s var(--ease, ease);
+}
+.izbor-kartica:hover:not(:disabled) { border-color: var(--line-2); transform: translateY(-1px); }
+.izbor-kartica.aktivno {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.izbor-kartica:disabled { opacity: 0.45; cursor: not-allowed; }
+.izbor-naslov { font-weight: 600; font-size: 13.5px; }
+.izbor-opis { font-size: 11.5px; color: var(--dim); line-height: 1.35; }
+.izbor-znak { font-size: 10.5px; color: var(--faint); }
+
+/* ── Jezgre: klik po jezgri, velik broj, brzi izbori ─────────────────────── */
+.jezgre { display: grid; gap: 10px; }
+.jezgre-vrh { display: flex; align-items: baseline; gap: 8px; }
+.jezgre-broj {
+  font-size: 28px; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, var(--fg), var(--dim));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.jezgre-traka { display: flex; gap: 3px; flex-wrap: wrap; max-width: 560px; }
+.jezgra {
+  width: 15px; height: 26px; padding: 0; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 4px; background: transparent;
+  transition: background 0.12s var(--ease, ease), border-color 0.12s var(--ease, ease), transform 0.12s var(--ease, ease);
+}
+.jezgra:hover { transform: translateY(-2px); border-color: var(--line-2); }
+.jezgra.upaljena {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 35%, transparent));
+}
+.jezgre-brzi { display: flex; gap: 6px; flex-wrap: wrap; }

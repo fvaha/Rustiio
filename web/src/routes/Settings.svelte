@@ -20,11 +20,22 @@
   let rawOpen = $state(false)
   let rawText = $state('')
   let rawError = $state('')
+  // Stroj na kojem Rustiio radi — iz toga se nudi grafička ili procesor.
+  let hardware = $state(null)
 
   // Aktivni tab. Adresa ostaje `#/settings` (sekcija se NE stavlja u adresu — router
   // bi je čitao kao stranicu i vraćao na Pregled).
   let tab = $state(sessionStorage.getItem('rustiio:settings-tab') ?? 'server')
   $effect(() => sessionStorage.setItem('rustiio:settings-tab', tab))
+
+  onMount(async () => {
+    try {
+      hardware = await get('/api/hardware')
+    } catch {
+      // Bez podataka izbor ostaje kakav je u configu — ništa se ne kvari.
+      hardware = null
+    }
+  })
 
   const hr = $derived(i18n.lang !== 'en')
   const text = (item) => (item && typeof item === 'object' ? (item[i18n.lang] ?? item.hr ?? '') : (item ?? ''))
@@ -234,11 +245,58 @@
           <p>{text(aktivna.desc)}</p>
         </div>
         <div class="panel-body">
+          {#if aktivna.key === 'transcode' && hardware}
+            <div class="hw">
+              <div class="hw-glava">
+                <b>{t('hw.title')}</b>
+                <span class="hw-os">{hardware.os} · {hardware.arch}</span>
+              </div>
+              <div class="hw-redci">
+                <div class="hw-redak">
+                  <span class="hw-kljuc">{t('hw.cpu')}</span>
+                  <span class="hw-vrijednost">{hardware.cpu?.model || '—'}</span>
+                  <span class="hw-znak">{hardware.cpu?.cores} {t('hw.cores')} / {hardware.cpu?.threads} {t('hw.threads')}</span>
+                </div>
+                <div class="hw-redak">
+                  <span class="hw-kljuc">{t('hw.gpu')}</span>
+                  {#if hardware.gpu?.name}
+                    <span class="hw-vrijednost">
+                      {hardware.gpu.name}{hardware.gpu.vram_mb ? ` · ${Math.round(hardware.gpu.vram_mb / 1024)} GB` : ''}
+                    </span>
+                  {:else}
+                    <span class="hw-vrijednost muted">{t('hw.no_gpu')}</span>
+                  {/if}
+                </div>
+                <div class="hw-redak">
+                  <span class="hw-kljuc">{t('hw.encoders')}</span>
+                  <span class="hw-znakovi">
+                    {#each hardware.accelerators ?? [] as ubrzivac}
+                      {#each ubrzivac.encoders ?? [] as enkoder}
+                        <span class="hw-znak mono">{enkoder}</span>
+                      {/each}
+                    {:else}
+                      <span class="hw-znak mono">libx264</span>
+                    {/each}
+                  </span>
+                </div>
+              </div>
+              <div class="hw-dno">
+                <span class="hw-preporuka">{t('hw.recommended')}: <b>{hardware.preferred}</b></span>
+                <span class="hw-znak" class:ok={hardware.subtitles} class:ne={!hardware.subtitles}>
+                  {hardware.subtitles ? t('hw.subtitles_yes') : t('hw.subtitles_no')}
+                </span>
+                {#if hardware.memory_mb}
+                  <span class="hw-znak">{Math.round(hardware.memory_mb / 1024)} GB RAM</span>
+                {/if}
+              </div>
+            </div>
+          {/if}
           {#each fieldsOf(aktivna.key, config) as field (field.path)}
             <Field
               path={field.path}
               meta={metaOf(field.path, field.value)}
               value={field.value}
+              hw={hardware}
               changed={changed.some((item) => item === field.path || item.startsWith(`${field.path}[`))}
               onchange={(next) => change(field.path, next)}
             />

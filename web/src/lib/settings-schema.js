@@ -191,9 +191,30 @@ export const FIELDS = {
   },
   'transcode.mode': {
     label: { hr: 'Način rada', en: 'Mode' },
-    help: { hr: 'auto bira najbrže izmjereno; grafička/procesor/kombinirano (HW dekodiranje + procesor) možeš zadati ručno.', en: 'auto picks the fastest measured; GPU/CPU/hybrid (HW decode + CPU) can be forced.' },
-    type: 'enum',
-    options: ['auto', 'gpu', 'cpu', 'hybrid'],
+    help: { hr: 'Biraj prema stroju na kojem Rustiio radi (kartica iznad pokazuje što ima). Grafička ne dira jezgre; procesor ih koristi koliko mu daš.', en: 'Pick by the machine Rustiio runs on (the card above shows what it has). GPU leaves cores free; CPU uses as many as you give it.' },
+    type: 'cards',
+    options: [
+      {
+        value: 'auto',
+        label: { hr: 'Automatski', en: 'Automatic' },
+        hint: { hr: 'Najbrže izmjereno na ovom stroju.', en: 'Fastest measured on this machine.' },
+      },
+      {
+        value: 'gpu',
+        label: { hr: 'Grafička', en: 'GPU' },
+        hint: { hr: 'NVENC / VAAPI / QuickSync — jezgre ostaju slobodne.', en: 'NVENC / VAAPI / QuickSync — cores stay free.' },
+      },
+      {
+        value: 'hybrid',
+        label: { hr: 'Kombinirano', en: 'Hybrid' },
+        hint: { hr: 'Grafička raspakira, procesor enkodira.', en: 'GPU decodes, CPU encodes.' },
+      },
+      {
+        value: 'cpu',
+        label: { hr: 'Procesor', en: 'CPU' },
+        hint: { hr: 'Softverski (libx264) — ti biraš jezgre.', en: 'Software (libx264) — you pick the cores.' },
+      },
+    ],
   },
   'transcode.encoder': {
     label: { hr: 'Enkoder', en: 'Encoder' },
@@ -203,10 +224,10 @@ export const FIELDS = {
     placeholder: { hr: 'automatski', en: 'automatic' },
   },
   'transcode.threads': {
-    label: { hr: 'Niti procesora', en: 'CPU threads' },
-    help: { hr: 'Za softversko prekodiranje; 0 = sve jezgre (ffmpeg odluči). Grafički enkoderi niti ne koriste.', en: 'For software encoding; 0 = all cores (ffmpeg decides). Hardware encoders ignore it.' },
-    type: 'number',
-    min: 0,
+    label: { hr: 'Jezgre za procesor', en: 'CPU cores' },
+    help: { hr: 'Koliko jezgri smije softversko kodiranje. Klikni po jezgri ili „Sve" — grafički enkoderi ih ne koriste.', en: 'How many cores software encoding may use. Click a core or “All” — GPU encoders ignore this.' },
+    type: 'cores',
+    min: 1,
     max: 128,
   },
   'transcode.hardware_decode': {

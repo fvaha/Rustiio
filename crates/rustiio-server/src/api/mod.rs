@@ -8,6 +8,7 @@
 
 pub mod browse;
 pub mod fs;
+pub mod hardware;
 pub mod logs;
 pub mod profiles;
 pub mod settings;

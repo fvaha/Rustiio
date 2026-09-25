@@ -71,6 +71,7 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::api::browse::routes())
         .merge(crate::api::fs::routes())
         .merge(crate::api::stats::routes())
+        .merge(crate::api::hardware::routes())
         .merge(crate::api::logs::routes())
         .merge(crate::api::settings::routes())
         .merge(crate::api::transcode::routes())
