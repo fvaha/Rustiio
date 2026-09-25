@@ -15,6 +15,8 @@ pub struct StoredDevice {
     pub user_agent: String,
     pub friendly_name: Option<String>,
     pub profile_id: String,
+    /// Profil koji je korisnik izabrao (prazno = automatsko prepoznavanje).
+    pub profile_choice: String,
     pub first_seen: u64,
     pub last_seen: u64,
     pub requests: u64,
@@ -57,12 +59,39 @@ pub fn save(store: &Store, device: &StoredDevice) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Izričit izbor profila za uređaj. Prazno polje briše izbor (vraća se na auto).
+pub fn set_profile_choice(store: &Store, key: &str, profile_id: &str) -> rusqlite::Result<()> {
+    let conn = store.conn();
+    // UPSERT: korisnik može odabrati profil i prije nego se uređaj prvi put javio.
+    conn.execute(
+        "INSERT INTO devices (key, profile_choice) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET profile_choice = excluded.profile_choice",
+        params![key, profile_id.trim()],
+    )?;
+    Ok(())
+}
+
+/// Izabrani profil za uređaj (None = automatski).
+pub fn profile_choice(store: &Store, key: &str) -> rusqlite::Result<Option<String>> {
+    let conn = store.conn();
+    let choice: Option<String> = conn
+        .query_row("SELECT profile_choice FROM devices WHERE key = ?1", params![key], |row| {
+            row.get(0)
+        })
+        .map(Some)
+        .or_else(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })?;
+    Ok(choice.filter(|value| !value.trim().is_empty()))
+}
+
 /// Svi zapamćeni uređaji, najsvježiji prvi.
 pub fn all(store: &Store) -> rusqlite::Result<Vec<StoredDevice>> {
     let conn = store.conn();
     let mut statement = conn.prepare(
         "SELECT key, ip, user_agent, friendly_name, profile_id, first_seen, last_seen,
-                requests, streams, headers
+                requests, streams, headers, profile_choice
          FROM devices ORDER BY last_seen DESC",
     )?;
     let rows = statement.query_map([], |row| {
@@ -80,6 +109,7 @@ pub fn all(store: &Store) -> rusqlite::Result<Vec<StoredDevice>> {
             requests: row.get::<_, i64>(7)?.max(0) as u64,
             streams: row.get::<_, i64>(8)?.max(0) as u64,
             headers: row.get(9)?,
+            profile_choice: row.get(10)?,
         })
     })?;
     rows.collect()
@@ -99,6 +129,7 @@ mod tests {
             user_agent: "VLC/3.0.23 LibVLC/3.0.23".into(),
             friendly_name: None,
             profile_id: "vlc".into(),
+            profile_choice: String::new(),
             first_seen: 100,
             last_seen: 200,
             requests: 1,
@@ -118,5 +149,43 @@ mod tests {
         assert_eq!(svi[0].last_seen, 300);
         assert!(svi[0].headers.contains("Streaming"));
         assert_eq!(svi[0].friendly_name, None, "prazno ime ostaje None, ne prazan string");
+    }
+
+    #[test]
+    fn izbor_profila_prezivi_osvjezavanje_uredjaja() {
+        let store = Store::open_memory().expect("baza");
+        let kljuc = "ua:DLNADOC/1.50 SEC_HHP_[TV] Samsung 6 Series";
+
+        // Korisnik bira profil i prije nego se uredjaj prvi put javio.
+        set_profile_choice(&store, kljuc, "samsung-tv").expect("izbor");
+        assert_eq!(profile_choice(&store, kljuc).expect("citanje").as_deref(), Some("samsung-tv"));
+
+        // Uredjaj se javlja i red se osvjezava — izbor korisnika mora ostati.
+        save(
+            &store,
+            &StoredDevice {
+                key: kljuc.into(),
+                ip: "192.168.1.100".into(),
+                user_agent: "DLNADOC/1.50".into(),
+                friendly_name: Some("TV".into()),
+                profile_id: "samsung-tv".into(),
+                profile_choice: String::new(),
+                first_seen: 1,
+                last_seen: 2,
+                requests: 3,
+                streams: 1,
+                headers: "{}".into(),
+            },
+        )
+        .expect("upis");
+        assert_eq!(
+            profile_choice(&store, kljuc).expect("citanje").as_deref(),
+            Some("samsung-tv"),
+            "osvjezavanje uredjaja ne smije pregaziti izbor korisnika"
+        );
+
+        // Prazno polje vraca automatsko prepoznavanje.
+        set_profile_choice(&store, kljuc, "").expect("brisanje");
+        assert_eq!(profile_choice(&store, kljuc).expect("citanje"), None);
     }
 }

@@ -35,6 +35,41 @@ pub fn warm_probe_cache(store: &Store, probe: &rustiio_library::MediaProbe) -> u
     count
 }
 
+/// Dopuni dubinu boje u bazi za zapise upisane prije sheme 5.
+///
+/// Skener pamti kodek, ali ne i dubinu; bez nje 10-bit HEVC (`Main 10`) izgleda
+/// kao običan HEVC, odluka kaže „TV to može", a TV onda ne otvori fajl.
+pub fn backfill_bit_depth(store: &Store, probe: &rustiio_library::MediaProbe) -> usize {
+    let rows = match rustiio_library::store::items::media_without_bit_depth(store) {
+        Ok(rows) => rows,
+        Err(error) => {
+            warn!(error = %error, "zapisi bez dubine boje nisu procitani");
+            return 0;
+        }
+    };
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|trajanje| trajanje.as_secs() as i64)
+        .unwrap_or(0);
+    let mut updated = 0;
+    for (id, path) in rows {
+        // Keš je punjen iz baze — tamo dubine boje još nema, pa bi `probe` vratio
+        // upravo taj prazan zapis i ffprobe se ne bi pokrenuo. Zato prvo zaboravi.
+        probe.forget(&path);
+        let Some(info) = probe.probe(&path) else {
+            continue;
+        };
+        if info.video.as_ref().and_then(|video| video.pix_fmt.as_ref()).is_none() {
+            continue;
+        }
+        if rustiio_library::store::items::update_media(store, id, &info, now).is_ok() {
+            updated += 1;
+        }
+    }
+    updated
+}
+
 /// Ključ uređaja za watch-state: UDN iz DLNA zaglavlja ako ga ima, inače `User-Agent`.
 pub fn device_key(headers: &axum::http::HeaderMap) -> String {
     for name in ["x-av-client-udn", "x-udn", "x-av-client-id"] {
@@ -107,8 +142,8 @@ mod tests {
                 width: 1920,
                 height: 1080,
                 bitrate_kbps: None,
-                pix_fmt: None,
-                profile: None,
+                pix_fmt: Some("yuv420p10le".to_string()),
+                profile: Some("Main 10".to_string()),
                 level: None,
             }),
             audio: Some(rustiio_library::AudioStream {
@@ -130,6 +165,16 @@ mod tests {
         assert_eq!(cached.video_codec(), Some("hevc"));
         assert_eq!(cached.audio.as_ref().map(|audio| audio.channels), Some(6));
         assert_eq!(cached.duration_ms, Some(7_200_000));
+        // Dubina boje mora preživjeti bazu — o njoj ovisi odluka o transcodeu.
+        let video = cached.video.as_ref().expect("video");
+        assert_eq!(video.pix_fmt.as_deref(), Some("yuv420p10le"));
+        assert_eq!(video.profile.as_deref(), Some("Main 10"));
+        assert!(
+            rustiio_library::store::items::media_without_bit_depth(&store)
+                .expect("upit")
+                .is_empty(),
+            "nema više zapisa bez dubine boje"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

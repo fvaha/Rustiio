@@ -1097,6 +1097,7 @@ dependencies = [
  "sysinfo",
  "tokio",
  "tokio-util",
+ "toml",
  "tower-http",
  "tracing",
  "tracing-subscriber",

@@ -297,7 +297,37 @@ fn video_supported(media: &MediaInfo, profile: &Profile, reasons: &mut Vec<Strin
             ok = false;
         }
     }
+    // Dubina boje: HEVC Main 10 (`yuv420p10le`) ne otvara nijedan TV koji zna
+    // samo 8-bit, a kodek je isti (`hevc`) pa ga sam popis kodeka ne uhvati.
+    if let Some(dubina) = bit_depth(video)
+        && !profile.supports_bit_depth(dubina)
+    {
+        reasons.push(format!(
+            "{dubina}-bit video ({} {}) prelazi profil ({} bita)",
+            video.codec,
+            video.profile.as_deref().unwrap_or("-"),
+            profile.video.max_bit_depth
+        ));
+        ok = false;
+    }
     ok
+}
+
+/// Dubina boje iz ffprobe-a: iz `pix_fmt` (`yuv420p10le`) ili iz profila
+/// (`Main 10`). Ništa se ne nagađa — kad nema podatka, ne smeta.
+fn bit_depth(video: &rustiio_library::mediainfo::VideoStream) -> Option<u8> {
+    video
+        .pix_fmt
+        .as_deref()
+        .and_then(dubina_iz_teksta)
+        .or_else(|| video.profile.as_deref().and_then(dubina_iz_teksta))
+}
+
+fn dubina_iz_teksta(tekst: &str) -> Option<u8> {
+    let mala = tekst.to_ascii_lowercase();
+    [16u8, 12, 10]
+        .into_iter()
+        .find(|dubina| mala.contains(&format!("p{dubina}")) || mala.contains(&format!(" {dubina}")))
 }
 
 fn audio_supported(media: &MediaInfo, profile: &Profile, reasons: &mut Vec<String>) -> bool {
@@ -373,6 +403,49 @@ mod tests {
             audio_streams: Vec::new(),
             embedded_subtitles: 0,
         }
+    }
+
+    /// Isti zapis, ali 10-bit (HEVC Main 10 / yuv420p10le).
+    fn media_10bit(video_codec: &str, width: u32, height: u32, audio_codec: &str, channels: u8) -> MediaInfo {
+        let mut info = media(video_codec, width, height, audio_codec, channels);
+        if let Some(video) = info.video.as_mut() {
+            video.pix_fmt = Some("yuv420p10le".to_string());
+            video.profile = Some("Main 10".to_string());
+        }
+        info
+    }
+
+    #[test]
+    fn ten_bit_video_is_transcoded_for_an_eight_bit_tv() {
+        let deset = media_10bit("hevc", 1920, 1080, "eac3", 6);
+        let decision = decide(&deset, &profile("samsung-tv"), "mkv", false, &hw_soft());
+        assert_eq!(
+            decision.mode,
+            PlaybackMode::Transcode { video: true, audio: false },
+            "10-bit HEVC se mora prekodirati: {:?}",
+            decision.reasons
+        );
+        assert!(
+            decision.reasons.iter().any(|reason| reason.contains("10-bit")),
+            "razlog mora reci da je 10-bit: {:?}",
+            decision.reasons
+        );
+        // Isti kodek u 8-bit ide direktno — ne dira se sve, samo ono što TV ne može.
+        let osam = media("hevc", 1920, 1080, "eac3", 6);
+        assert_eq!(
+            decide(&osam, &profile("samsung-tv"), "mkv", false, &hw_soft()).mode,
+            PlaybackMode::Direct
+        );
+    }
+
+    #[test]
+    fn desktop_clients_take_ten_bit_directly() {
+        let deset = media_10bit("hevc", 3840, 2160, "eac3", 6);
+        assert_eq!(
+            decide(&deset, &profile("vlc"), "mkv", false, &hw_soft()).mode,
+            PlaybackMode::Direct,
+            "VLC profil dopušta 10-bit"
+        );
     }
 
     fn profile(id: &str) -> Profile {

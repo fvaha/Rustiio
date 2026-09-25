@@ -7,12 +7,29 @@
 use rusqlite::Connection;
 
 /// Verzija sheme; raste sa svakom izmjenom tablica (`PRAGMA user_version`).
-pub const VERSION: i32 = 4;
+pub const VERSION: i32 = 6;
 
 /// v1 → v2: dva stupca za poster (datoteka u kešu + odakle je došao).
 const MIGRATION_V2: &str = r#"
 ALTER TABLE items ADD COLUMN poster        TEXT;
 ALTER TABLE items ADD COLUMN poster_source TEXT;
+"#;
+
+/// v4 → v5: dubina boje i profil video zapisa (`yuv420p10le`, `Main 10`).
+///
+/// Bez toga se 10-bit HEVC ne razlikuje od 8-bit — isti je kodek — pa odluka
+/// o puštanju pošalje original TV-u koji ga ne može dekodirati.
+const MIGRATION_V5: &str = r#"
+ALTER TABLE items ADD COLUMN video_pix_fmt TEXT;
+ALTER TABLE items ADD COLUMN video_profile TEXT;
+"#;
+
+/// v5 → v6: profil koji je korisnik *izabrao* za uređaj (prazno = automatski).
+///
+/// `profile_id` ostaje ono što je matcher pogodio; ovime korisnik može reći
+/// „ovaj TV uvijek koristi ovaj profil" i to nadjačava prepoznavanje.
+const MIGRATION_V6: &str = r#"
+ALTER TABLE devices ADD COLUMN profile_choice TEXT NOT NULL DEFAULT '';
 "#;
 
 const SCHEMA_V1: &str = r#"
@@ -151,6 +168,14 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 
     if current < 4 {
         conn.execute_batch(MIGRATION_V4)?;
+    }
+
+    if current < 5 {
+        conn.execute_batch(MIGRATION_V5)?;
+    }
+
+    if current < 6 {
+        conn.execute_batch(MIGRATION_V6)?;
     }
 
     conn.pragma_update(None, "user_version", VERSION)?;

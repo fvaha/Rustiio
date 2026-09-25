@@ -10,7 +10,8 @@ use axum::body::Bytes;
 use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, get, post};
+use axum::routing::{any, get,
+    put, post};
 use serde_json::json;
 use tokio_util::io::ReaderStream;
 use tower_http::trace::TraceLayer;
@@ -50,6 +51,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/devices", get(api_devices))
         .route("/api/profiles", get(api_profiles))
         .route("/api/profiles/reload", post(api_profiles_reload))
+        .route("/api/profiles/{id}", put(api_profile_save))
+        .route("/api/profiles/{id}/reset", post(api_profile_reset))
+        .route("/api/device-profile", put(api_device_profile))
         .route("/api/profile/{key}", get(api_profile_for_device).post(crate::api::profiles::save))
         .route("/api/streams", get(api_streams))
         .route("/api/search", get(api_search))
@@ -635,10 +639,26 @@ impl futures_core::Stream for SessionStream {
 /// Prepoznaj uredjaj iz zaglavlja; zapisi ga (osnova za nove profile).
 async fn profile_for(state: &AppState, headers: &HeaderMap, peer: Option<SocketAddr>) -> Profile {
     let identity = device_key(headers, peer);
+
+    // Izričit izbor korisnika nadjačava automatsko prepoznavanje: TV uvijek
+    // dobiva profil koji mu je dodijeljen, bez obzira na User-Agent.
+    let izbor = rustiio_library::store::devices::profile_choice(&state.store, &identity.key())
+        .ok()
+        .flatten();
     let (profile, reasons) = {
         let profiles = state.profiles.read().await;
-        let outcome = profiles.identify(&identity);
-        (outcome.profile.clone(), outcome.reasons.clone())
+        let odabran =
+            izbor.as_deref().and_then(|id| profiles.all().iter().find(|item| item.id == id).cloned());
+        match odabran {
+            Some(profile) => (
+                profile.clone(),
+                vec![format!("izbor korisnika: {}", izbor.clone().unwrap_or_default())],
+            ),
+            None => {
+                let outcome = profiles.identify(&identity);
+                (outcome.profile.clone(), outcome.reasons.clone())
+            }
+        }
     };
     if state.config.profiles.capture {
         let record = state.capture.record(&identity, &profile.id, &dlna_headers(headers));
@@ -742,6 +762,10 @@ async fn api_devices(State(state): State<AppState>) -> Response {
                 "user_agent": record.user_agent,
                 "friendly_name": record.friendly_name,
                 "profile": record.profile_id,
+                "profile_choice": rustiio_library::store::devices::profile_choice(&state.store, &record.key)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
                 "requests": record.requests,
                 "first_seen": record.first_seen,
                 "last_seen": record.last_seen,
@@ -751,6 +775,126 @@ async fn api_devices(State(state): State<AppState>) -> Response {
         })
         .collect();
     axum::Json(json!({ "count": devices.len(), "devices": devices })).into_response()
+}
+
+/// Spoji izmjenu u postojeći JSON (djelomični upit ne resetira ostala polja).
+fn spoji_json(postojeci: &mut serde_json::Value, izmjena: &serde_json::Value) {
+    if let (serde_json::Value::Object(staro), serde_json::Value::Object(novo)) = (&mut *postojeci, izmjena) {
+        for (kljuc, vrijednost) in novo {
+            match staro.get_mut(kljuc) {
+                Some(postojeci) => spoji_json(postojeci, vrijednost),
+                None => {
+                    staro.insert(kljuc.clone(), vrijednost.clone());
+                }
+            }
+        }
+    } else {
+        *postojeci = izmjena.clone();
+    }
+}
+
+/// Izmijeni pravila profila i spremi ih kao `<profiles_dir>/<id>.toml`.
+///
+/// Tako se `max_bit_depth` (i ostala pravila) mijenja po uređaju, a izmjena
+/// preživi restart jer `load_dir` čita datoteku preko ugrađenog profila.
+async fn api_profile_save(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    axum::Json(izmjena): axum::Json<serde_json::Value>,
+) -> Response {
+    let trenutni = {
+        let profiles = state.profiles.read().await;
+        profiles.all().iter().find(|item| item.id == id).cloned()
+    };
+    let Some(trenutni) = trenutni else {
+        return (StatusCode::NOT_FOUND, format!("nepoznat profil: {id}")).into_response();
+    };
+
+    let mut spojeni = serde_json::to_value(&trenutni).unwrap_or(serde_json::Value::Null);
+    spoji_json(&mut spojeni, &izmjena);
+    let mut osvjezen: rustiio_profiles::Profile = match serde_json::from_value(spojeni) {
+        Ok(profil) => profil,
+        Err(error) => {
+            return (StatusCode::BAD_REQUEST, format!("pravila nisu ispravna: {error}")).into_response();
+        }
+    };
+    // ID i pravila prepoznavanja ostaju kakvi su bili — mijenjaju se samo pravila.
+    osvjezen.id = trenutni.id.clone();
+
+    let dir = state.profiles_dir();
+    if let Err(error) = std::fs::create_dir_all(&dir) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("mapa profila: {error}")).into_response();
+    }
+    let putanja = dir.join(format!("{}.toml", osvjezen.id));
+    let tekst = match toml::to_string_pretty(&osvjezen) {
+        Ok(tekst) => tekst,
+        Err(error) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("zapis profila: {error}")).into_response();
+        }
+    };
+    if let Err(error) = std::fs::write(&putanja, tekst) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("pisanje {}: {error}", putanja.display()))
+            .into_response();
+    }
+
+    let broj = state.reload_profiles().await;
+    info!(profile = %osvjezen.id, file = %putanja.display(), "pravila profila spremljena");
+    axum::Json(json!({
+        "ok": true,
+        "profile": osvjezen,
+        "profiles": broj,
+        "file": putanja.display().to_string(),
+    }))
+    .into_response()
+}
+
+/// Vrati profil na ugrađena pravila (briše `<profiles_dir>/<id>.toml`).
+async fn api_profile_reset(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    let putanja = state.profiles_dir().join(format!("{id}.toml"));
+    if putanja.exists() {
+        if let Err(error) = std::fs::remove_file(&putanja) {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("brisanje {}: {error}", putanja.display()))
+                .into_response();
+        }
+    }
+    let broj = state.reload_profiles().await;
+    info!(profile = %id, file = %putanja.display(), "profil vracen na ugradena pravila");
+    axum::Json(json!({ "ok": true, "profile": id, "profiles": broj })).into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct DeviceProfileBody {
+    key: String,
+    #[serde(default)]
+    profile_id: String,
+}
+
+/// Dodijeli profil uređaju (prazan `profile_id` vraća automatsko prepoznavanje).
+async fn api_device_profile(
+    State(state): State<AppState>,
+    axum::Json(telo): axum::Json<DeviceProfileBody>,
+) -> Response {
+    if !telo.profile_id.trim().is_empty() {
+        let postoji = {
+            let profiles = state.profiles.read().await;
+            profiles.all().iter().any(|item| item.id == telo.profile_id)
+        };
+        if !postoji {
+            return (StatusCode::BAD_REQUEST, format!("nepoznat profil: {}", telo.profile_id))
+                .into_response();
+        }
+    }
+
+    match rustiio_library::store::devices::set_profile_choice(&state.store, &telo.key, &telo.profile_id)
+    {
+        Ok(()) => {
+            info!(device = %telo.key, profile = %telo.profile_id, "profil uredjaja postavljen");
+            axum::Json(json!({ "ok": true, "key": telo.key, "profile": telo.profile_id })).into_response()
+        }
+        Err(error) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("izbor nije spremljen: {error}")).into_response()
+        }
+    }
 }
 
 async fn api_profiles(State(state): State<AppState>) -> Response {
@@ -765,7 +909,11 @@ async fn api_profiles(State(state): State<AppState>) -> Response {
                 "description": profile.description,
                 "containers": profile.video.containers,
                 "video_codecs": profile.video.codecs,
+                "max_width": profile.video.max_width,
                 "max_height": profile.video.max_height,
+                // Dubina boje je ono što odlučuje hoće li 10-bit HEVC ići u transcode.
+                "max_bit_depth": profile.video.max_bit_depth,
+                "max_bitrate_kbps": profile.video.max_bitrate_kbps,
                 "audio_codecs": profile.audio.codecs,
                 "max_channels": profile.audio.max_channels,
                 "subtitle_mode": format!("{:?}", profile.subtitle_mode()).to_ascii_lowercase(),

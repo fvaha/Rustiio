@@ -322,7 +322,8 @@ pub fn update_media(
     let conn = store.conn();
     conn.execute(
         "UPDATE items SET duration_ms = ?2, width = ?3, height = ?4, video_codec = ?5,
-                audio_codec = ?6, audio_channels = ?7, bitrate = ?8, probed_at = ?9
+                audio_codec = ?6, audio_channels = ?7, bitrate = ?8, probed_at = ?9,
+                video_pix_fmt = ?10, video_profile = ?11
          WHERE id = ?1",
         params![
             item_id,
@@ -333,10 +334,26 @@ pub fn update_media(
             info.audio.as_ref().map(|audio| audio.codec.clone()),
             info.audio.as_ref().map(|audio| audio.channels as i64),
             info.bitrate_kbps.map(|bitrate| bitrate as i64),
-            now
+            now,
+            info.video.as_ref().and_then(|video| video.pix_fmt.clone()),
+            info.video.as_ref().and_then(|video| video.profile.clone()),
         ],
     )?;
     Ok(())
+}
+
+/// Video zapisi kojima u bazi nema dubine boje (zapisi prije sheme 5).
+pub fn media_without_bit_depth(store: &Store) -> rusqlite::Result<Vec<(i64, PathBuf)>> {
+    let conn = store.conn();
+    let mut statement = conn.prepare(
+        "SELECT id, path FROM items
+         WHERE video_codec IS NOT NULL AND (video_pix_fmt IS NULL OR video_pix_fmt = '')
+         ORDER BY id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, i64>(0)?, PathBuf::from(row.get::<_, String>(1)?)))
+    })?;
+    rows.collect()
 }
 
 /// Metapodaci iz baze, spremni za `MediaProbe` cache nakon restarta.
@@ -345,7 +362,8 @@ pub fn media_for_probe(store: &Store) -> rusqlite::Result<Vec<(PathBuf, crate::m
 
     let conn = store.conn();
     let mut statement = conn.prepare(
-        "SELECT path, duration_ms, width, height, video_codec, audio_codec, audio_channels, bitrate
+        "SELECT path, duration_ms, width, height, video_codec, audio_codec, audio_channels, bitrate,
+                video_pix_fmt, video_profile
          FROM items WHERE probed_at IS NOT NULL AND (video_codec IS NOT NULL OR audio_codec IS NOT NULL)",
     )?;
     let rows = statement.query_map([], |row| {
@@ -357,6 +375,8 @@ pub fn media_for_probe(store: &Store) -> rusqlite::Result<Vec<(PathBuf, crate::m
         let audio_codec: Option<String> = row.get(5)?;
         let audio_channels: Option<i64> = row.get(6)?;
         let bitrate_kbps: Option<i64> = row.get(7)?;
+        let pix_fmt: Option<String> = row.get(8)?;
+        let video_profile: Option<String> = row.get(9)?;
 
         let info = MediaInfo {
             // Kontejner se u bazi ne pamti po imenu — za odluku je mjerodavna
@@ -370,8 +390,9 @@ pub fn media_for_probe(store: &Store) -> rusqlite::Result<Vec<(PathBuf, crate::m
                 width: width.unwrap_or(0).max(0) as u32,
                 height: height.unwrap_or(0).max(0) as u32,
                 bitrate_kbps: None,
-                pix_fmt: None,
-                profile: None,
+                // Dubina boje iz baze: odluka o transcodeu ovisi o njoj.
+                pix_fmt,
+                profile: video_profile,
                 level: None,
             }),
             audio: audio_codec.map(|codec| AudioStream {

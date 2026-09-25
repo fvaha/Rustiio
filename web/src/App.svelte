@@ -2,6 +2,7 @@
   // Okvir: lijevi stupac (navigacija), zaglavlje s naslovom stranice i stanjem,
   // sadržaj stranice i poruke. Na mobitelu navigacija ide u zaglavlje.
   import { onMount } from 'svelte'
+  import Icon from './components/Icon.svelte'
   import { t, i18n } from './lib/i18n.svelte.js'
   import { store, start, dismissToast, refreshStatus } from './lib/store.svelte.js'
   import { get, put } from './lib/api.js'
@@ -92,7 +93,7 @@
       <nav class="mobile-tabs">
         {#each TABS as item}
           <button class="nav-item" class:active={tab === item.id} onclick={() => go(item.id)}>
-            <span class="ico" aria-hidden="true">{item.icon}</span>
+            <span class="ico"><Icon name={item.id} /></span>
             {t(`nav.${item.id}`)}
           </button>
         {/each}

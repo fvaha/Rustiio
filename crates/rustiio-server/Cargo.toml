@@ -22,6 +22,7 @@ axum = { workspace = true, features = ["ws"] }
 futures-core.workspace = true
 tower-http.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true

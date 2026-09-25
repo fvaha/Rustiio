@@ -247,7 +247,20 @@ impl AppState {
 
     /// Napuni `MediaProbe` cache iz baze (nakon restarta nema ponovnog ffprobe-a).
     pub fn warm_probe_from_db(&self) -> usize {
-        crate::library::warm_probe_cache(&self.store, &self.media_probe)
+        let count = crate::library::warm_probe_cache(&self.store, &self.media_probe);
+
+        // Zapisi iz starijih shema nemaju dubinu boje; dopuni je u pozadini da
+        // prvi TV koji naleti na 10-bit fajl ne dobije original koji ne otvara.
+        let store = Arc::clone(&self.store);
+        let probe = Arc::clone(&self.media_probe);
+        std::thread::spawn(move || {
+            let updated = crate::library::backfill_bit_depth(&store, &probe);
+            if updated > 0 {
+                info!(count = updated, "dubina boje dopunjena (10-bit se ne vidi po kodeku)");
+            }
+        });
+
+        count
     }
 
     /// Ponovno ucitaj profile s diska (REST: `POST /api/profiles/reload`).
@@ -383,6 +396,8 @@ pub fn uredjaj_u_bazu(record: &DeviceRecord) -> rustiio_library::store::devices:
         user_agent: record.user_agent.clone(),
         friendly_name: record.friendly_name.clone(),
         profile_id: record.profile_id.clone(),
+        // Izbor korisnika se ne dira pri svakom zahtjevu — samo `set_profile_choice`.
+        profile_choice: String::new(),
         first_seen: record.first_seen,
         last_seen: record.last_seen,
         requests: record.requests,

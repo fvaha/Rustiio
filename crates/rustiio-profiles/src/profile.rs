@@ -24,7 +24,17 @@ pub struct Profile {
     pub dlna: DlnaCaps,
 }
 
+/// Zadana dubina boje u profilima (sigurno za sve TV-e).
+fn osam_bitova() -> u8 {
+    8
+}
+
 impl Profile {
+    /// Dekodira li uređaj zapis te dubine boje.
+    pub fn supports_bit_depth(&self, depth: u8) -> bool {
+        depth <= self.video.max_bit_depth
+    }
+
     pub fn supports_container(&self, ext: &str) -> bool {
         let ext = normalize(ext);
         self.video.containers.iter().any(|value| normalize(value) == ext)
@@ -100,6 +110,10 @@ pub struct VideoCaps {
     pub codecs: Vec<String>,
     pub max_width: u32,
     pub max_height: u32,
+    /// Najveća dubina boje koju uređaj dekodira. 8 je sigurno za TV-e; HEVC
+    /// Main 10 (10-bit) zahtijeva 10, a takav zapis stariji TV-i ne otvore.
+    #[serde(default = "osam_bitova")]
+    pub max_bit_depth: u8,
     pub max_bitrate_kbps: u32,
 }
 
@@ -110,6 +124,7 @@ impl Default for VideoCaps {
             codecs: ["h264", "mpeg2video"].iter().map(|s| s.to_string()).collect(),
             max_width: 1920,
             max_height: 1080,
+            max_bit_depth: 8,
             max_bitrate_kbps: 20_000,
         }
     }

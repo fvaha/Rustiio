@@ -12,6 +12,7 @@ containers = ["mp4", "mkv", "ts", "mov", "avi", "webm"]
 codecs = ["h264", "hevc", "vp9", "av1", "mpeg2video", "mpeg4"]
 max_width = 3840
 max_height = 2160
+max_bit_depth = 10
 max_bitrate_kbps = 80000
 
 [audio]
