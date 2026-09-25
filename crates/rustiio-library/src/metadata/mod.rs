@@ -186,13 +186,38 @@ impl Enricher {
         if let Some(path) = cache::existing(&self.art_dir, item_id) {
             return Some(Poster { bytes: 0, path, source: None });
         }
-        let found = tmdb::poster_by_id(
+        let gallery = tmdb::gallery_best_poster(
             &self.agent,
             &resolved.kind,
             &resolved.provider_id,
             self.api_key.as_deref(),
-            &self.width,
-        )?;
+        );
+        // Ako TMDB nema ni jedan plakat s glasom zajednice, TVmaze ima kurirani
+        // plakat serije — bolje to nego tuđa slika s nula glasova.
+        let found = match gallery {
+            Some((_, 0)) => {
+                let mut query = guess_title(&resolved.title);
+                query.title = resolved.title.clone();
+                query.year = resolved.year;
+                query.is_series = resolved.kind == "tv";
+                keyless::tvmaze_poster(&self.agent, &query).or_else(|| {
+                    tmdb::poster_by_id(
+                        &self.agent,
+                        &resolved.kind,
+                        &resolved.provider_id,
+                        self.api_key.as_deref(),
+                        &self.width,
+                    )
+                })?
+            }
+            _ => tmdb::poster_by_id(
+                &self.agent,
+                &resolved.kind,
+                &resolved.provider_id,
+                self.api_key.as_deref(),
+                &self.width,
+            )?,
+        };
         if !cache::is_image(&found.bytes) {
             tracing::warn!(provider_id = %resolved.provider_id, url = %found.url, "dohvaceno nije slika");
             return None;

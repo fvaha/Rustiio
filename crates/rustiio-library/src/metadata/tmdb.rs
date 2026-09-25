@@ -453,6 +453,47 @@ pub fn parse_web_detail(html: &str) -> Option<Detail> {
     Some(Detail { title, year, poster_hash: Some(hash.to_string()) })
 }
 
+/// Najbolje ocijenjen plakat iz galerije zapisa.
+///
+/// `poster_path` na zapisu je često tuđa slika (glazbeni omot, zastava, fan
+/// uradak s nula glasova), pa se bira plakat s najviše glasova — i vraća se i
+/// broj glasova da pozivatelj zna je li dobio nešto što je itko potvrdio.
+pub fn gallery_best_poster(
+    agent: &ureq::Agent,
+    kind: &str,
+    id: &str,
+    api_key: Option<&str>,
+) -> Option<(String, u32)> {
+    let key = api_key?;
+    let url = format!("{API_BASE}/{kind}/{id}/images?api_key={key}&include_image_language=en,null");
+    let mut response = agent.get(&url).call().ok()?;
+    let body = response.body_mut().read_to_string().ok()?;
+    let value: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let posteri = value.get("posters")?.as_array()?;
+    let mut najbolji: Option<(String, u32, f64)> = None;
+    for poster in posteri {
+        let Some(putanja) = poster.get("file_path").and_then(|p| p.as_str()) else {
+            continue;
+        };
+        let jezik = poster.get("iso_639_1").and_then(|j| j.as_str()).unwrap_or("");
+        if !jezik.is_empty() && jezik != "en" {
+            continue;
+        }
+        let glasova = poster.get("vote_count").and_then(|g| g.as_u64()).unwrap_or(0) as u32;
+        let ocjena = poster.get("vote_average").and_then(|o| o.as_f64()).unwrap_or(0.0);
+        let bolji = match &najbolji {
+            None => true,
+            Some((_, najglasova, najocjena)) => {
+                glasova > *najglasova || (glasova == *najglasova && ocjena > *najocjena)
+            }
+        };
+        if bolji {
+            najbolji = Some((putanja.trim_start_matches('/').to_string(), glasova, ocjena));
+        }
+    }
+    najbolji.map(|(hash, glasova, _)| (hash, glasova))
+}
+
 /// Dohvati zapis po ID-u (API ako ima ključ, inače javna stranica).
 pub fn detail(agent: &ureq::Agent, kind: &str, id: &str, api_key: Option<&str>) -> Option<Detail> {
     let (url, body) = match api_key {
@@ -485,12 +526,27 @@ pub fn poster_by_id(
     api_key: Option<&str>,
     width: &str,
 ) -> Option<Found> {
+    // Galerija ima plakate s glasovima zajednice; `poster_path` je često
+    // nečija tuđa slika (glazbeni omot, zastava, fan uradak bez glasova).
+    if let Some((hash, glasova)) = gallery_best_poster(agent, kind, id, api_key) {
+        if glasova >= 1
+            && let Some(found) = image_as_found(agent, &hash, width, Source::Tmdb)
+        {
+            tracing::info!(kind, id, glasova, "plakat iz galerije zapisa");
+            return Some(found);
+        }
+    }
     let zapis = detail(agent, kind, id, api_key)?;
     let hash = zapis.poster_hash?;
-    let url = image_url(&hash, width);
+    let source = if api_key.is_some() { Source::Tmdb } else { Source::TmdbWeb };
+    image_as_found(agent, &hash, width, source)
+}
+
+/// Slika s TMDB-a kao `Found` (uz provjeru da je stvarno slika).
+fn image_as_found(agent: &ureq::Agent, hash: &str, width: &str, source: Source) -> Option<Found> {
+    let url = image_url(hash, width);
     let bytes = fetch_bytes(agent, &url)?;
     let extension = extension_for(&bytes)?;
-    let source = if api_key.is_some() { Source::Tmdb } else { Source::TmdbWeb };
     Some(Found { source, url, bytes, extension })
 }
 
@@ -576,6 +632,29 @@ mod detail_tests {
         assert_eq!(zapis.title, "Dark Matter");
         assert_eq!(zapis.year, Some(2024));
         assert_eq!(zapis.poster_hash.as_deref(), Some("xyz"));
+    }
+
+    #[test]
+    fn gallery_picks_most_voted_english_poster() {
+        let json = r#"{"posters":[
+            {"file_path":"/losa.jpg","iso_639_1":null,"vote_count":0,"vote_average":8.0},
+            {"file_path":"/dobra.jpg","iso_639_1":"en","vote_count":12,"vote_average":5.5},
+            {"file_path":"/strana.jpg","iso_639_1":"de","vote_count":99,"vote_average":9.0}
+        ]}"#;
+        let value: serde_json::Value = serde_json::from_str(json).unwrap();
+        let posteri = value.get("posters").unwrap().as_array().unwrap();
+        let mut najbolji: Option<(String, u64)> = None;
+        for poster in posteri {
+            let jezik = poster.get("iso_639_1").and_then(|j| j.as_str()).unwrap_or("");
+            if !jezik.is_empty() && jezik != "en" {
+                continue;
+            }
+            let glasova = poster.get("vote_count").and_then(|g| g.as_u64()).unwrap_or(0);
+            if najbolji.as_ref().is_none_or(|(_, naj)| glasova > *naj) {
+                najbolji = Some((poster.get("file_path").unwrap().as_str().unwrap().to_string(), glasova));
+            }
+        }
+        assert_eq!(najbolji.unwrap().0, "/dobra.jpg", "njemački plakat se preskače");
     }
 
     #[test]
