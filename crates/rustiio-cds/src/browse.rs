@@ -249,7 +249,15 @@ fn view_object(view: View, catalog: &Catalog, options: &BrowseOptions<'_>) -> Ob
 pub fn node_to_object(node: &Node, catalog: &Catalog, options: &BrowseOptions<'_>) -> Object {
     if node.is_container() {
         let child_count = catalog.children(&node.id).len() as u32;
-        return Object::container(&node.id, &node.parent_id, &node.title, child_count);
+        let mut object = Object::container(&node.id, &node.parent_id, &node.title, child_count);
+        // Poster i za mape: serija, sezona i mapa s filmovima inace na TV-u ostaje
+        // prazna plocica (ranije se `return` dogodio prije prikacivanja slike).
+        if let Some(art) = options.art {
+            if let Some(url) = art.art_url(&node.id) {
+                object = object.with_album_art(&url);
+            }
+        }
+        return object;
     }
 
     let ext = node.path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
