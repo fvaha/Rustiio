@@ -164,11 +164,18 @@ mod tests {
     use super::*;
     use rustiio_core::config::{Root, RootKind};
 
+    /// Apsolutna putanja koja vrijedi na svim platformama — `"/media"` nije apsolutna
+    /// na Windowsu (nema oznaku pogona), pa bi `validate` tamo odbio ispravan config.
+    #[cfg(windows)]
+    const MEDIA_DIR: &str = r"C:\media";
+    #[cfg(not(windows))]
+    const MEDIA_DIR: &str = "/media";
+
     fn config() -> Config {
         let mut config = Config::default();
         config.server.http_port = 8200;
         config.server.udn = Some("test-udn".into());
-        config.library.roots = vec![root("/media")];
+        config.library.roots = vec![root(MEDIA_DIR)];
         config
     }
 
