@@ -48,7 +48,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/status", get(api_status))
         .route("/api/rescan", post(api_rescan))
         .route("/api/devices", get(api_devices))
-        .route("/api/profiles", get(api_profiles))
+        .route("/api/profiles", get(api_profiles).post(api_profile_create))
         .route("/api/profiles/reload", post(api_profiles_reload))
         .route("/api/profiles/{id}", put(api_profile_save))
         .route("/api/profiles/{id}/reset", post(api_profile_reset))
@@ -887,8 +887,15 @@ fn spoji_json(postojeci: &mut serde_json::Value, izmjena: &serde_json::Value) {
 async fn api_profile_save(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    axum::Json(izmjena): axum::Json<serde_json::Value>,
+    axum::Json(mut izmjena): axum::Json<serde_json::Value>,
 ) -> Response {
+    // U TOML-u se pravila prepoznavanja zovu `match` (serde rename), a sučelje ih šalje
+    // kao `rules` — bez ovoga se pravila tiho izgube (polja ostane prazno).
+    if let Some(pravila) = izmjena.get_mut("rules").map(|vrijednost| vrijednost.take()) {
+        if let Some(objekt) = izmjena.as_object_mut() {
+            objekt.entry("match".to_string()).or_insert(pravila);
+        }
+    }
     let trenutni = {
         let profiles = state.profiles.read().await;
         profiles.all().iter().find(|item| item.id == id).cloned()
@@ -1031,6 +1038,95 @@ async fn api_device_profile(
     }
 }
 
+/// Stvori **novi** profil pod imenom, kao kopiju postojećeg (ili `00-generic`).
+///
+/// Pravila prepoznavanja se ne kopiraju: profil se dodjeljuje uređaju u sučelju, a
+/// kopirana pravila bi presrela uređaje koje već hvata izvorni profil.
+async fn api_profile_create(
+    State(state): State<AppState>,
+    axum::Json(tijelo): axum::Json<serde_json::Value>,
+) -> Response {
+    let ime = tijelo.get("name").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    if ime.is_empty() {
+        return (StatusCode::BAD_REQUEST, "profilu treba ime").into_response();
+    }
+    let izvor = tijelo.get("from").and_then(|v| v.as_str()).unwrap_or("00-generic");
+    let dir = state.profiles_dir();
+    let (osnova, zauzeti) = {
+        let profiles = state.profiles.read().await;
+        let osnova = profiles
+            .all()
+            .iter()
+            .find(|profil| profil.id == izvor)
+            .or_else(|| profiles.all().first())
+            .cloned();
+        let zauzeti: std::collections::HashSet<String> =
+            profiles.all().iter().map(|profil| profil.id.clone()).collect();
+        (osnova, zauzeti)
+    };
+    let Some(mut novi) = osnova else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "nema izvornog profila").into_response();
+    };
+
+    let osnova_id = slug_id(&ime);
+    let mut id = osnova_id.clone();
+    let mut redni = 2;
+    while zauzeti.contains(&id) || dir.join(format!("{id}.toml")).exists() {
+        id = format!("{osnova_id}-{redni}");
+        redni += 1;
+    }
+
+    novi.id = id.clone();
+    novi.name = ime;
+    novi.rules = rustiio_profiles::MatchRules::default();
+    novi.description = format!("Korisnički profil ({id})");
+
+    if let Err(error) = std::fs::create_dir_all(&dir) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("mapa profila: {error}")).into_response();
+    }
+    let putanja = dir.join(format!("{id}.toml"));
+    let tekst = match toml::to_string_pretty(&novi) {
+        Ok(tekst) => tekst,
+        Err(error) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("zapis profila: {error}"))
+                .into_response();
+        }
+    };
+    if let Err(error) = std::fs::write(&putanja, tekst) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("pisanje {}: {error}", putanja.display()))
+            .into_response();
+    }
+
+    let broj = state.reload_profiles().await;
+    info!(profile = %id, file = %putanja.display(), "novi profil spremljen");
+    axum::Json(json!({ "ok": true, "id": id, "file": putanja.display().to_string(), "profiles": broj }))
+        .into_response()
+}
+
+/// Ime profila u siguran id (`Samsung dnevna soba` → `samsung-dnevna-soba`).
+fn slug_id(ime: &str) -> String {
+    let mut izlaz = String::new();
+    let mut crtica = false;
+    for znak in ime.trim().chars() {
+        let slovo = match znak.to_ascii_lowercase() {
+            'č' | 'ć' => 'c',
+            'đ' => 'd',
+            'š' => 's',
+            'ž' => 'z',
+            ostalo => ostalo,
+        };
+        if slovo.is_ascii_alphanumeric() {
+            izlaz.push(slovo);
+            crtica = false;
+        } else if !crtica && !izlaz.is_empty() {
+            izlaz.push('-');
+            crtica = true;
+        }
+    }
+    let izlaz = izlaz.trim_matches('-').to_string();
+    if izlaz.is_empty() { "profil".to_string() } else { izlaz }
+}
+
 async fn api_profiles(State(state): State<AppState>) -> Response {
     let dir = state.profiles_dir();
     // Ugrađeni profili nemaju datoteku; oni s datotekom su ili korisnički ili
@@ -1058,15 +1154,29 @@ async fn api_profiles(State(state): State<AppState>) -> Response {
                 "audio_codecs": profile.audio.codecs,
                 "max_channels": profile.audio.max_channels,
                 "subtitle_mode": format!("{:?}", profile.subtitle_mode()).to_ascii_lowercase(),
+                "subtitles": {
+                    "mode": format!("{:?}", profile.subtitles.mode).to_ascii_lowercase(),
+                    "formats": profile.subtitles.formats,
+                },
                 "target": {
                     "container": profile.transcode.container,
                     "video_codec": profile.transcode.video_codec,
                     "audio_codec": profile.transcode.audio_codec,
+                    "audio_channels": profile.transcode.audio_channels,
                     "max_bitrate_kbps": profile.transcode.max_bitrate_kbps,
+                    "max_height": profile.transcode.max_height,
+                    "allow_remux": profile.transcode.allow_remux,
+                },
+                "dlna": {
+                    "op": profile.dlna.op,
+                    "flags": profile.dlna.flags,
+                    "send_pn": profile.dlna.send_pn,
+                    "time_seek": profile.dlna.time_seek,
                 },
                 "rules": {
                     "user_agent": profile.rules.user_agent,
                     "friendly_name": profile.rules.friendly_name,
+                    "device_type": profile.rules.device_type,
                     "ip": profile.rules.ip,
                 },
             })

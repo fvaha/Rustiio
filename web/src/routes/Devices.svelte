@@ -98,6 +98,7 @@
   // ── Pravila profila: dubina boje i ostalo se mijenja po uređaju ──────────
   let editId = $state('')
   let pravila = $state(null)
+  let novoIme = $state('')
   // Potvrda brisanja ide kroz mali dijalog — radi i na dodir i u desktop aplikaciji.
   let potvrda = $state(null)
   // Isto, ali za uređaj iz popisa (ne za profil).
@@ -182,6 +183,20 @@
       target_video: profil.target?.video_codec ?? '',
       target_audio: profil.target?.audio_codec ?? '',
       target_bitrate: profil.target?.max_bitrate_kbps ?? 0,
+      target_channels: profil.target?.audio_channels ?? 2,
+      target_height: profil.target?.max_height ?? '',
+      target_remux: profil.target?.allow_remux ?? true,
+      ime: profil.name ?? '',
+      sub_mode: profil.subtitles?.mode ?? 'soft',
+      sub_formats: (profil.subtitles?.formats ?? []).join(', '),
+      dlna_op: profil.dlna?.op ?? '01',
+      dlna_flags: profil.dlna?.flags ?? '',
+      dlna_pn: profil.dlna?.send_pn ?? true,
+      dlna_time_seek: profil.dlna?.time_seek ?? true,
+      rule_ua: (profil.rules?.user_agent ?? []).join(', '),
+      rule_ime: (profil.rules?.friendly_name ?? []).join(', '),
+      rule_tip: (profil.rules?.device_type ?? []).join(', '),
+      rule_ip: (profil.rules?.ip ?? []).join(', '),
     }
   }
 
@@ -206,15 +221,54 @@
           codecs: popis(pravila.audio_codecs),
           max_channels: Number(pravila.max_channels) || 2,
         },
+        subtitles: {
+          mode: pravila.sub_mode,
+          formats: popis(pravila.sub_formats),
+        },
         transcode: {
           container: pravila.target_container,
           video_codec: pravila.target_video,
           audio_codec: pravila.target_audio,
+          audio_channels: Number(pravila.target_channels) || 2,
           max_bitrate_kbps: Number(pravila.target_bitrate) || 0,
+          max_height: Number(pravila.target_height) || null,
+          allow_remux: !!pravila.target_remux,
+        },
+        dlna: {
+          op: pravila.dlna_op,
+          flags: pravila.dlna_flags,
+          send_pn: !!pravila.dlna_pn,
+          time_seek: !!pravila.dlna_time_seek,
+        },
+        name: pravila.ime,
+        rules: {
+          user_agent: popis(pravila.rule_ua),
+          friendly_name: popis(pravila.rule_ime),
+          device_type: popis(pravila.rule_tip),
+          ip: popis(pravila.rule_ip),
         },
       })
       toast('ok', t('devices.saved_rules'))
       await refreshProfiles()
+    } catch (error) {
+      toast('err', `${t('common.error')}: ${error.message}`)
+    }
+  }
+
+  /// Kopiraj trenutni profil pod novim imenom i odmah ga otvori za uređivanje.
+  async function spremiKaoNovi() {
+    const ime = novoIme.trim()
+    if (!ime) {
+      toast('err', t('devices.new_needs_name'))
+      return
+    }
+    try {
+      const odgovor = await post('/api/profiles', { name: ime, from: editId || undefined })
+      const noviId = odgovor?.id ?? odgovor?.profile?.id
+      toast('ok', `${t('devices.profile_created')}: ${noviId ?? ime}`)
+      novoIme = ''
+      await refreshProfiles()
+      if (noviId) ucitajPravila(noviId)
     } catch (error) {
       toast('err', `${t('common.error')}: ${error.message}`)
     }
@@ -470,10 +524,95 @@
             <span>{t('devices.target_bitrate')}</span>
             <input class="input num" type="number" bind:value={pravila.target_bitrate} />
           </label>
+          <label class="polje">
+            <span>{t('devices.target_channels')}</span>
+            <input class="input num" type="number" min="1" max="8" bind:value={pravila.target_channels} />
+          </label>
+          <label class="polje">
+            <span>{t('devices.target_height')}</span>
+            <input class="input num" type="number" placeholder="720" bind:value={pravila.target_height} />
+          </label>
+          <label class="polje">
+            <span>{t('devices.target_remux')}</span>
+            <input type="checkbox" bind:checked={pravila.target_remux} />
+          </label>
+        </div>
+
+        <div class="podnaslov">{t('devices.profile_name')}</div>
+        <div class="pravila">
+          <label class="polje">
+            <span>{t('devices.profile_name')}</span>
+            <input class="input" bind:value={pravila.ime} placeholder={t('devices.new_profile_ph')} />
+          </label>
+        </div>
+
+        <div class="podnaslov">{t('devices.subtitles_mode')}</div>
+        <div class="pravila">
+          <label class="polje">
+            <span>{t('devices.subtitles_mode')}</span>
+            <select class="select" bind:value={pravila.sub_mode}>
+              <option value="soft">{t('devices.sub_soft')}</option>
+              <option value="burn">{t('devices.sub_burn')}</option>
+              <option value="none">{t('devices.sub_none')}</option>
+            </select>
+          </label>
+          <label class="polje">
+            <span>{t('devices.subtitles_formats')}</span>
+            <input class="input" bind:value={pravila.sub_formats} placeholder="srt, vtt" />
+          </label>
+        </div>
+
+        <div class="podnaslov">{t('devices.dlna_title')}</div>
+        <div class="pravila">
+          <label class="polje">
+            <span>{t('devices.dlna_op')}</span>
+            <input class="input" bind:value={pravila.dlna_op} placeholder="01" />
+          </label>
+          <label class="polje">
+            <span>{t('devices.dlna_flags')}</span>
+            <input class="input mono" bind:value={pravila.dlna_flags} placeholder="01700000000000000000000000000000" />
+          </label>
+          <label class="polje">
+            <span>{t('devices.dlna_pn')}</span>
+            <input type="checkbox" bind:checked={pravila.dlna_pn} />
+          </label>
+          <label class="polje">
+            <span>{t('devices.dlna_time_seek')}</span>
+            <input type="checkbox" bind:checked={pravila.dlna_time_seek} />
+          </label>
+        </div>
+
+        <div class="podnaslov">{t('devices.rules_match')}</div>
+        <div class="pravila">
+          <label class="polje">
+            <span>{t('devices.rule_ua')}</span>
+            <input class="input" bind:value={pravila.rule_ua} placeholder="SEC_HHP, DLNADOC" />
+          </label>
+          <label class="polje">
+            <span>{t('devices.rule_name')}</span>
+            <input class="input" bind:value={pravila.rule_ime} placeholder="Samsung 6 Series" />
+          </label>
+          <label class="polje">
+            <span>{t('devices.rule_type')}</span>
+            <input class="input" bind:value={pravila.rule_tip} placeholder="MediaRenderer" />
+          </label>
+          <label class="polje">
+            <span>{t('devices.rule_ip')}</span>
+            <input class="input" bind:value={pravila.rule_ip} placeholder="192.168.1.100" />
+          </label>
+        </div>
+
+        <div class="podnaslov">{t('devices.new_profile')}</div>
+        <div class="pravila">
+          <label class="polje">
+            <span>{t('devices.new_profile')}</span>
+            <input class="input" bind:value={novoIme} placeholder={t('devices.new_profile_ph')} />
+          </label>
         </div>
 
         <div class="akcije">
           <button class="btn" onclick={spremiPravila}>{t('devices.save_rules')}</button>
+          <button class="btn ghost" onclick={spremiKaoNovi}>{t('devices.new_profile')}</button>
           {#if izabraniProfil?.file && izabraniProfil?.builtin}
             <button class="btn ghost" onclick={vratiUgradeno}>{t('devices.reset_rules')}</button>
           {/if}
