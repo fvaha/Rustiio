@@ -7,7 +7,7 @@
 use rusqlite::Connection;
 
 /// Verzija sheme; raste sa svakom izmjenom tablica (`PRAGMA user_version`).
-pub const VERSION: i32 = 3;
+pub const VERSION: i32 = 4;
 
 /// v1 → v2: dva stupca za poster (datoteka u kešu + odakle je došao).
 const MIGRATION_V2: &str = r#"
@@ -117,6 +117,13 @@ CREATE TABLE IF NOT EXISTS title_ids (
 );
 "#;
 
+/// v4: uz uređaje se pamte i IP te DLNA zaglavlja (stranica Uređaji čita i
+/// ono što je viđeno prije zadnjeg dizanja servera).
+const MIGRATION_V4: &str = r#"
+ALTER TABLE devices ADD COLUMN ip      TEXT NOT NULL DEFAULT '';
+ALTER TABLE devices ADD COLUMN headers TEXT NOT NULL DEFAULT '{}';
+"#;
+
 /// Otvori (ili napravi) bazu i primijeni migracije. Idempotentno.
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // WAL: čitanje ne blokira pisanje tijekom skena.
@@ -140,6 +147,10 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 
     if current < 3 {
         conn.execute_batch(MIGRATION_V3)?;
+    }
+
+    if current < 4 {
+        conn.execute_batch(MIGRATION_V4)?;
     }
 
     conn.pragma_update(None, "user_version", VERSION)?;

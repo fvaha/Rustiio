@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="zelena" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7dff5a"/>
+      <stop offset="1" stop-color="#22d13f"/>
+    </linearGradient>
+    <filter id="sjaj" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="7" result="m"/>
+      <feMerge><feMergeNode in="m"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="256" height="256" rx="46" fill="#05070a"/>
+  <rect x="6" y="6" width="244" height="244" rx="42" fill="none" stroke="#1d2a20" stroke-width="3"/>
+  <g filter="url(#sjaj)" fill="none" stroke="url(#zelena)" stroke-linecap="round">
+    <path d="M150 74a62 62 0 0 1 0 108" stroke-width="17"/>
+    <path d="M180 46a104 104 0 0 1 0 164" stroke-width="12" opacity="0.45"/>
+  </g>
+  <path d="M74 62 L74 194 L182 128 Z" fill="url(#zelena)" filter="url(#sjaj)"/>
+</svg>

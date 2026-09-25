@@ -10,6 +10,7 @@ use rustiio_core::DeviceIdentity;
 use rustiio_core::config::Config;
 use rustiio_library::metadata::Enricher;
 use rustiio_library::{Catalog, DurationProbe, MediaProbe, NodeKind, ScanOptions, Store, scan};
+use rustiio_profiles::capture::DeviceRecord;
 use rustiio_profiles::{Capture, ProfileSet};
 use rustiio_transcode::{HwSupport, SessionManager, detect_hw};
 use rustiio_upnp::DeviceMeta;
@@ -106,6 +107,17 @@ impl AppState {
         if let Ok(mut catalog) = self.catalog.try_write() {
             let summary = crate::library::sync_catalog(&self.store, &mut catalog);
             info!(roots = summary.roots, remapped = summary.remapped, "katalog prebacen na id-eve iz baze");
+        }
+        // Uređaji se pamte u bazi, ali se ovdje (gdje je prava baza, ne ona u
+        // memoriji iz `new`) učitavaju u živi registar — stranica Uređaji tako
+        // poslije restarta pokazuje iste TV-e, a ne prazan popis.
+        match rustiio_library::store::devices::all(&self.store) {
+            Ok(zapisi) => {
+                let broj = zapisi.len();
+                self.capture.seed(zapisi.into_iter().map(uredjaj_iz_baze).collect());
+                info!(broj, "uredjaji ucitani iz baze");
+            }
+            Err(error) => warn!(%error, "ne mogu ucitati uredjaje iz baze"),
         }
         self
     }
@@ -342,6 +354,41 @@ pub fn refresh_posters(state: &AppState, batch: usize, max_batches: usize) -> us
         Err(error) => warn!(%error, "brisanje postera serijala nije uspjelo"),
     }
     enrich_posters(state, batch, true, max_batches)
+}
+
+/// Zapamćeni uređaj → živi zapis (zaglavlja su u bazi JSON).
+fn uredjaj_iz_baze(zapis: rustiio_library::store::devices::StoredDevice) -> DeviceRecord {
+    let headers: std::collections::BTreeMap<String, String> =
+        serde_json::from_str(&zapis.headers).unwrap_or_default();
+    DeviceRecord {
+        key: zapis.key,
+        ip: zapis.ip,
+        user_agent: zapis.user_agent,
+        friendly_name: zapis.friendly_name,
+        profile_id: zapis.profile_id,
+        first_seen: zapis.first_seen,
+        last_seen: zapis.last_seen,
+        requests: zapis.requests,
+        // Popis puštenih objekata je živi podatak; u bazi je samo brojka.
+        streams: Vec::new(),
+        headers,
+    }
+}
+
+/// Živi zapis → red u bazi.
+pub fn uredjaj_u_bazu(record: &DeviceRecord) -> rustiio_library::store::devices::StoredDevice {
+    rustiio_library::store::devices::StoredDevice {
+        key: record.key.clone(),
+        ip: record.ip.clone(),
+        user_agent: record.user_agent.clone(),
+        friendly_name: record.friendly_name.clone(),
+        profile_id: record.profile_id.clone(),
+        first_seen: record.first_seen,
+        last_seen: record.last_seen,
+        requests: record.requests,
+        streams: record.streams.len() as u64,
+        headers: serde_json::to_string(&record.headers).unwrap_or_else(|_| "{}".to_string()),
+    }
 }
 
 pub fn enrich_posters(state: &AppState, batch: usize, mark_missing: bool, max_batches: usize) -> usize {

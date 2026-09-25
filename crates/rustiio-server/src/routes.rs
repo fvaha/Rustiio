@@ -637,7 +637,14 @@ async fn profile_for(state: &AppState, headers: &HeaderMap, peer: Option<SocketA
         (outcome.profile.clone(), outcome.reasons.clone())
     };
     if state.config.profiles.capture {
-        state.capture.record(&identity, &profile.id, &dlna_headers(headers));
+        let record = state.capture.record(&identity, &profile.id, &dlna_headers(headers));
+        // Uređaj se pamti i u bazi: bez toga je stranica Uređaji nakon svakog
+        // dizanja servera prazna, iako su TV-i isti.
+        if let Err(error) =
+            rustiio_library::store::devices::save(&state.store, &crate::state::uredjaj_u_bazu(&record))
+        {
+            warn!(%error, "ne mogu zapamtiti uredjaj");
+        }
     }
     debug!(
         device = %identity.user_agent.clone().unwrap_or_default(),

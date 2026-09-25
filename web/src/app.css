@@ -86,6 +86,8 @@ a:hover { text-decoration: underline; }
   box-shadow: 0 6px 18px -6px rgba(110, 168, 254, 0.85);
   display: grid; place-items: center; font-weight: 700; color: #06101f; font-size: 15px;
 }
+/* Ista ikona kao na TV-u i u aplikaciji (web/public/icon-*.png). */
+.brand .logo img { width: 100%; height: 100%; border-radius: inherit; display: block; }
 .brand .name { font-weight: 640; letter-spacing: -0.02em; font-size: 15px; }
 .brand .ver { color: var(--faint); font-size: 11.5px; }
 

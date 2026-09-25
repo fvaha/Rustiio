@@ -74,7 +74,9 @@
       return
     }
     try {
-      const text = await get(`/api/profile/${device.key}`, { headers: { accept: 'text/plain' } })
+      // Ključ uređaja zna sadržavati `/` i razmake (`ua:VLC/3.0.23 LibVLC/3.0.23`)
+      // pa mora u URL enkodiran — inače zahtjev ode na pogrešnu rutu (405).
+      const text = await get(`/api/profile/${encodeURIComponent(device.key)}`, { headers: { accept: 'text/plain' } })
       generated = { ...generated, [device.key]: text }
       opened = device.key
     } catch (error) {
@@ -95,7 +97,7 @@
   async function saveProfile(device) {
     const id = suggestId(device)
     try {
-      const result = await post(`/api/profile/${device.key}`, { id })
+      const result = await post(`/api/profile/${encodeURIComponent(device.key)}`, { id })
       toast('ok', `${t('devices.saved')}: ${result?.id ?? id}`)
       await Promise.all([refreshProfiles(), refreshDevices()])
     } catch (error) {
@@ -107,7 +109,8 @@
 <div class="bento">
   <div class="card" style="--span: 7">
     <div class="card-head">
-      <span class="card-title">{t('devices.title')}</span>
+      <span class="card-title" title={t('devices.hint')}>{t('devices.title')}</span>
+      <span class="muted small hide-narrow">{t('devices.hint')}</span>
       <span class="card-actions">
         <span class="pill">{devices.length}</span>
         <button class="btn ghost" onclick={() => refreshDevices()} title={t('common.refresh')}>⟳</button>
@@ -144,8 +147,12 @@
                   <td class="muted nowrap" title={dateTime(device.last_seen)}>{ago(device.last_seen)}</td>
                   <td class="right">{device.requests}</td>
                   <td class="right nowrap">
-                    <button class="btn ghost" onclick={() => showToml(device)}>{opened === device.key ? '▾' : '▸'} TOML</button>
-                    <button class="btn" onclick={() => saveProfile(device)}>{t('common.save')}</button>
+                    <button class="btn ghost" onclick={() => showToml(device)} title={t('devices.toml_hint')}>
+                      {opened === device.key ? '▾' : '▸'} TOML
+                    </button>
+                    <button class="btn" onclick={() => saveProfile(device)} title={t('devices.make_profile_hint')}>
+                      {t('devices.make_profile')}
+                    </button>
                   </td>
                 </tr>
                 {#if opened === device.key}
@@ -247,6 +254,12 @@
   }
   .nowrap {
     white-space: nowrap;
+  }
+  /* Objašnjenje u zaglavlju ne stane na uski ekran. */
+  @media (max-width: 820px) {
+    .hide-narrow {
+      display: none;
+    }
   }
   pre {
     overflow-x: auto;

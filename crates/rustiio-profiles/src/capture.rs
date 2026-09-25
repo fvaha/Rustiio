@@ -42,6 +42,16 @@ impl Capture {
         Self::default()
     }
 
+    /// Ubaci zapise iz baze pri dizanju (živi zapis ima prednost).
+    pub fn seed(&self, records: Vec<DeviceRecord>) {
+        let Ok(mut devices) = self.devices.lock() else {
+            return;
+        };
+        for record in records {
+            devices.entry(record.key.clone()).or_insert(record);
+        }
+    }
+
     /// Zabiljezi zahtjev; `headers` su samo DLNA-relevantna zaglavlja.
     pub fn record(
         &self,

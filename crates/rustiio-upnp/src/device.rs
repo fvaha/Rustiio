@@ -40,6 +40,38 @@ pub fn device_description(meta: &DeviceMeta) -> String {
     <UDN>{udn}</UDN>
     <dlna:X_DLNADOC>DMS-1.50</dlna:X_DLNADOC>
     <presentationURL>{base_url}/</presentationURL>
+    <!-- Ikone koje TV-i prikazuju u popisu uređaja (Serviio ih ima, mi ih nismo imali). -->
+    <iconList>
+      <icon>
+        <mimetype>image/png</mimetype>
+        <width>48</width>
+        <height>48</height>
+        <depth>24</depth>
+        <url>{base_url}/icon-48.png</url>
+      </icon>
+      <icon>
+        <mimetype>image/png</mimetype>
+        <width>120</width>
+        <height>120</height>
+        <depth>24</depth>
+        <url>{base_url}/icon-120.png</url>
+      </icon>
+      <icon>
+        <mimetype>image/png</mimetype>
+        <width>256</width>
+        <height>256</height>
+        <depth>24</depth>
+        <url>{base_url}/icon-256.png</url>
+      </icon>
+      <icon>
+        <mimetype>image/jpeg</mimetype>
+        <dlna:profileID>JPEG_TN</dlna:profileID>
+        <width>160</width>
+        <height>160</height>
+        <depth>24</depth>
+        <url>{base_url}/icon-120.png</url>
+      </icon>
+    </iconList>
     <serviceList>
       <service>
         <serviceType>{content_directory}</serviceType>

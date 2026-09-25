@@ -5,6 +5,7 @@
 //! stabilan id, ne na redni broj iz posljednjeg skena.
 
 pub mod adopt;
+pub mod devices;
 pub mod items;
 pub mod play_state;
 pub mod schema;

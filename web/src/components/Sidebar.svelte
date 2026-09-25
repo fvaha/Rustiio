@@ -12,7 +12,7 @@
 
 <aside class="sidebar">
   <div class="brand">
-    <span class="logo">R</span>
+    <span class="logo"><img src="/icon-48.png" alt="Rustiio" /></span>
     <span>
       <span class="name">{t('app')}</span><br />
       <span class="ver">{store.status?.version ? `v${store.status.version}` : '—'}</span>
