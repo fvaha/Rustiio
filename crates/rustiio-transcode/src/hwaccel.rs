@@ -286,6 +286,17 @@ pub fn vaapi_device() -> Option<String> {
 
 pub fn video_encoder(hw: HwAccel, codec: &str) -> Option<&'static str> {
     let codec = codec.to_ascii_lowercase();
+    // Ciljani kodek koji hardver ne zna (npr. MPEG-2 za Samsung) mora dobiti
+    // softverski enkoder — inače bi ga donji `_` ogranak prebacio u H.264 i
+    // stream ne bi odgovarao profilu (Samsung u MPEG-TS-u traži baš MPEG-2).
+    match codec.as_str() {
+        "mpeg2video" | "mpeg2" => return Some("mpeg2video"),
+        "mpeg4" => return Some("mpeg4"),
+        "vp8" => return Some("libvpx"),
+        "vp9" => return Some("libvpx-vp9"),
+        "h264" | "avc" | "hevc" | "h265" => {}
+        _ => {}
+    }
     let (h264, hevc) = match (codec.as_str(), hw) {
         ("hevc" | "h265", HwAccel::Nvenc) => return Some("hevc_nvenc"),
         ("hevc" | "h265", HwAccel::Qsv) => return Some("hevc_qsv"),

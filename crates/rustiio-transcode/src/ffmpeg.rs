@@ -148,13 +148,14 @@ fn video_filters(request: &StartRequest<'_>) -> Option<String> {
     // 2160 širine ako se gleda samo visina, a TV takav okvir odbije.
     let max_sirina = decision.max_width.filter(|value| *value > 0);
     let max_visina = decision.max_height.filter(|value| *value > 0);
-    // H.264 level 4.1 (pinovan za Samsung) ne dopusta sliku vecu od 8192
+    // H.264 level 4.1 (pinovan za Samsung) ne dopusta sliku vecu od 8192,
+    // a MPEG-2 Main Level ne preko 1920
     // makrobloka: 1920x1080 = 8160 prolazi, 2160x1080 = 9180 ne. Bez ovoga
     // NVENC odbije posao, ffmpeg ne napise ni bajt, a TV vrti krug.
     let (max_sirina, max_visina) = if decision
         .video_encoder
         .as_deref()
-        .is_some_and(|encoder| encoder.contains("h264"))
+        .is_some_and(|encoder| encoder.contains("h264") || encoder.contains("mpeg2video"))
     {
         (
             Some(max_sirina.map_or(1920, |sirina| sirina.min(1920))),

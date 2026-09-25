@@ -24,10 +24,10 @@ formats = ["srt", "vtt"]
 
 [transcode]
 container = "mpegts"
-video_codec = "h264"
+video_codec = "mpeg2video"
 audio_codec = "ac3"
 audio_channels = 2
-max_bitrate_kbps = 16000
+max_bitrate_kbps = 15360
 allow_remux = true
 
 [dlna]

@@ -204,6 +204,11 @@ fn remux_decision(profile: &Profile, reasons: Vec<String>, hw: &HwSupport, media
 fn output_container(profile: &Profile) -> (&'static str, &'static str) {
     match profile.transcode.container.as_str() {
         "mp4" => ("video/mp4", "mp4"),
+        // Uz `DLNA.ORG_PN=MPEG_TS_*` ide MIME `video/mpeg`. Samsung na `video/mp2t`
+        // prijavi grešku formata (u informacijama onda piše "mp2t" i `.ts`).
+        _ if profile.transcode.video_codec.eq_ignore_ascii_case("mpeg2video") => {
+            ("video/mpeg", "mpegts")
+        }
         _ => ("video/mp2t", "mpegts"),
     }
 }
@@ -258,8 +263,13 @@ fn transcode_decision(
     // Korisnikov izričit odabir enkodera ima prednost — ali samo ako je isti kodek
     // kao ono što profil traži (inače bi TV dobio kodek koji ne podržava).
     let izričit = hw.encoder.clone().filter(|name| {
-        let hoce_hevc = matches!(target.video_codec.to_ascii_lowercase().as_str(), "hevc" | "h265");
-        kodek_iz_imena(name) == if hoce_hevc { "hevc" } else { "h264" }
+        // Odabir iz sucelja (`h264_nvenc`) prihvaca se samo ako je to enkoder koji
+        // ovaj kodek i ovo hardver stvarno daju. Inace bi za profil koji trazi
+        // mpeg2video (Samsung) prosao h264_nvenc i TV bi dobio kodek koji ne pusta.
+        hwaccel::video_encoder(HwAccel::from_encoder(name), &target.video_codec)
+            .map(str::to_string)
+            .as_deref()
+            == Some(name.as_str())
     });
     if video && hw.encoder.is_some() && izričit.is_none() {
         reasons.push(format!(
@@ -274,11 +284,23 @@ fn transcode_decision(
         None
     };
     // Kad je izabran HW enkoder, i pomoćne zastavice moraju biti njegove (npr. `-vaapi_device`).
+    // Softverski enkoder ne smije dobiti hardverske zastavice (npr. `-preset p4`
+    // za NVENC na `mpeg2video`) — ffmpeg bi pao na nepoznatoj opciji.
     let hw_za_ffmpeg = match video_encoder.as_deref() {
-        Some(name) if HwAccel::from_encoder(name) != HwAccel::None => HwAccel::from_encoder(name),
-        _ => hw.preferred,
+        Some(name) => HwAccel::from_encoder(name),
+        None => hw.preferred,
     };
     let audio_encoder = if audio { Some(target.audio_codec.clone()) } else { None };
+
+    // Samsung (Serviio `sam_j`) trazi MPEG-2 u MPEG-TS **s DLNA profilom**:
+    // bez `DLNA.ORG_PN` televizor odbije stream iako su kodeci ispravni.
+    let info = if container == "mpegts" && target.video_codec.eq_ignore_ascii_case("mpeg2video") {
+        // Visina izvora nije poznata u ovoj funkciji; ciljna visina profila je dovoljna.
+        let hd = target.max_height.unwrap_or(1080) > 576;
+        info.with_pn(if hd { "MPEG_TS_HD_NA" } else { "MPEG_TS_SD_NA" })
+    } else {
+        info
+    };
 
     Decision {
         mode: PlaybackMode::Transcode { video, audio },
@@ -302,10 +324,6 @@ fn transcode_decision(
 }
 
 /// Kodek iz imena enkodera (`hevc_nvenc` → hevc, `libx264` → h264).
-fn kodek_iz_imena(encoder: &str) -> &'static str {
-    let name = encoder.to_ascii_lowercase();
-    if name.contains("265") || name.contains("hevc") { "hevc" } else { "h264" }
-}
 
 fn video_supported(media: &MediaInfo, profile: &Profile, reasons: &mut Vec<String>) -> bool {
     let Some(video) = &media.video else {
