@@ -242,9 +242,9 @@ mod tests {
 
     fn samsung() -> DeviceIdentity {
         DeviceIdentity {
-            user_agent: Some("SEC_HHP_[TV]UE55MU6172/1.0".to_string()),
+            user_agent: Some("SEC_HHP_[TV]ExampleTV/1.0".to_string()),
             friendly_name: Some("[TV] Samsung 6 Series (55)".to_string()),
-            ip: Some("192.168.1.100".to_string()),
+            ip: Some("10.0.0.100".to_string()),
             device_type: None,
         }
     }
@@ -266,13 +266,13 @@ mod tests {
             name: "Sharp (rucno)".to_string(),
             ..Profile::default()
         };
-        forced.rules.ip = vec!["192.168.1.55".to_string()];
+        forced.rules.ip = vec!["10.0.0.55".to_string()];
         set.upsert(forced);
 
         let identity = DeviceIdentity {
-            user_agent: Some("SEC_HHP_[TV]UE55MU6172/1.0".to_string()),
+            user_agent: Some("SEC_HHP_[TV]ExampleTV/1.0".to_string()),
             friendly_name: None,
-            ip: Some("192.168.1.55".to_string()),
+            ip: Some("10.0.0.55".to_string()),
             device_type: None,
         };
         assert_eq!(set.identify(&identity).profile.id, "sharp-dnevni");
@@ -305,7 +305,7 @@ mod tests {
         let set = crate::builtin::load();
         let mut captured = Profile { id: "moj-samsung".to_string(), ..Profile::default() };
         // Tako izgleda profil koji napravi capture: pun UA + puno ime uredjaja.
-        captured.rules.user_agent = vec!["SEC_HHP_[TV]UE55MU6172/1.0".to_string()];
+        captured.rules.user_agent = vec!["SEC_HHP_[TV]ExampleTV/1.0".to_string()];
         captured.rules.friendly_name = vec!["[TV] Samsung 6 Series (55)".to_string()];
 
         let general = set.identify(&samsung()).score;
@@ -322,11 +322,11 @@ mod tests {
         // Samsung posalje User-Agent samo na nekim zahtjevima; da kljuc ostane UA,
         // isti televizor bi zavrsio kao dva uredjaja (jedan s profilom, drugi bez).
         let mut tv = samsung();
-        tv.ip = Some("192.168.1.100".into());
-        assert_eq!(tv.key(), "ip:192.168.1.100");
+        tv.ip = Some("10.0.0.100".into());
+        assert_eq!(tv.key(), "ip:10.0.0.100");
         // Lokalne adrese ne razlikuju uredjaje — tamo UA ostaje kljuc.
         tv.ip = Some("127.0.0.1".into());
-        assert_eq!(tv.key(), "ua:SEC_HHP_[TV]UE55MU6172/1.0");
+        assert_eq!(tv.key(), "ua:SEC_HHP_[TV]ExampleTV/1.0");
         let bare = DeviceIdentity { ip: Some("10.0.0.5".into()), ..Default::default() };
         assert_eq!(bare.key(), "ip:10.0.0.5");
     }

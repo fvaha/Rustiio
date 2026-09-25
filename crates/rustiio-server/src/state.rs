@@ -23,7 +23,7 @@ use crate::gena;
 pub struct AppState {
     pub config: Arc<Config>,
     pub identity: DeviceIdentity,
-    /// `http://192.168.1.10:8200` — osnova svih URL-ova u DIDL-u.
+    /// `http://10.0.0.10:8200` — osnova svih URL-ova u DIDL-u.
     pub base_url: Arc<String>,
     pub scan_options: Arc<ScanOptions>,
     pub catalog: Arc<RwLock<Catalog>>,

@@ -4,7 +4,7 @@
 
 **Status:** Faza 0 (temelj) ✅ + Faza 1 (DLNA MVP) ✅ + Faza 2 (profili + transcode) ✅ + Faza 3 (biblioteka) u izradi
 **Zadnja izmjena:** 2026-09-24
-**Živo:** `Rustiio (box)` radi na 192.168.1.10:8200 (Docker, host mreža, NVENC) — 168 objekata (95 video, 44 audio, 29 mapa), 17 ugrađenih profila.
+**Živo:** `Rustiio (box)` radi na 10.0.0.10:8200 (Docker, host mreža, NVENC) — 168 objekata (95 video, 44 audio, 29 mapa), 17 ugrađenih profila.
 
 ---
 
@@ -111,7 +111,7 @@
 
 **Acceptance:**
 - `cargo test --all` prolazi (SSDP parse, range parse, DIDL snapshot, decision-free).
-- `cargo run -p rustiio -- probe` vidi **sebe** i **Serviio na 192.168.1.10**.
+- `cargo run -p rustiio -- probe` vidi **sebe** i **Serviio na 10.0.0.10**.
 - `curl -s localhost:8200/rootDesc.xml | xmllint --noout -` → validan XML.
 - VLC → Local Network → vidi "Rustiio (...)"; browse + play MKV/MP4 radi (direct play).
 - Oba TV-a vide izvor i reproduciraju film.
@@ -124,7 +124,7 @@
 - [x] virtualne kategorije na vrhu stabla: **Video / Nedavno dodano / Muzika / Slike** (`rustiio-cds/src/views.rs`), uključivo/isključivo kroz config (`views`, `recent_limit`)
 - [x] Docker slika + `docker-compose.yml` (host mreža zbog SSDP-a) + systemd unit + `rustiio health` za healthcheck
 - [x] deploy na .10 (Docker) — Rustiio se oglašava u LAN-u uz router i Mac instancu
-- [x] **prvi test na TV-u: Samsung MU6172 vidi izvor i pušta film** (potvrdio korisnik, 2026-09-24)
+- [x] **prvi test na TV-u: TV vidi izvor i pušta film** (potvrdio korisnik, 2026-09-24)
 - [ ] Sharp Aquos — nije još provjeren
 - [ ] zapisati što svaki uređaj traži (`tcpdump -i any udp port 1900` + `--log debug`) — mehanizam je spreman (media zahtjevi se logiraju s `range`/`time_seek`/`UA`), zapis slijedi kad se TV spoji
 
@@ -168,7 +168,7 @@
 
 **Acceptance:** 10k fajlova indeksirano < 30 s, delta scan < 2 s, poster se vidi u VLC-u i na TV-u, "nastavi gledati" radi. → *indeks, stabilni id-evi, pretraga, watch-state, dohvat postera i poster u DIDL-u rade (živo provjereno s pravim TMDB ključem); delta scan i provjera na TV-u preostaju.*
 
-**Živa provjera postera** (`scratch/rustiio-faza3/verify_posters.py`, prolaz 2026-09-24): server s `TMDB_API_KEY` iz `~/.hermes/.env` → 2 objekta bez postera → nakon prolaza `have=2`, baza `3.jpg (tmdb)`, `5.jpg (tmdb)`; `GET /art/3` → **200 image/jpeg 92 090 B** (JPEG magija provjerena), `/art/5` → 200 99 078 B; DIDL za oba nosi `<upnp:albumArtURI dlna:profileID="JPEG_TN">http://192.168.1.3:8200/art/3</upnp:albumArtURI>`; objekt bez postera → **nema** `albumArtURI` i `/art/{id}` vraća 404.
+**Živa provjera postera** (`scratch/rustiio-faza3/verify_posters.py`, prolaz 2026-09-24): server s `TMDB_API_KEY` iz `~/.hermes/.env` → 2 objekta bez postera → nakon prolaza `have=2`, baza `3.jpg (tmdb)`, `5.jpg (tmdb)`; `GET /art/3` → **200 image/jpeg 92 090 B** (JPEG magija provjerena), `/art/5` → 200 99 078 B; DIDL za oba nosi `<upnp:albumArtURI dlna:profileID="JPEG_TN">http://10.0.0.3:8200/art/3</upnp:albumArtURI>`; objekt bez postera → **nema** `albumArtURI` i `/art/{id}` vraća 404.
 
 ### Izvori postera — provjereno živim pozivima (2026-09-24)
 
@@ -296,7 +296,7 @@ a kartica na dashboardu pokazuje `mpegts · Apple VideoToolbox · h264_videotool
 | `cargo test --workspace` | 60 testova prolazi (SSDP parser/builder, range, SOAP args + entiteti, DIDL, config, vrijeme, skener) |
 | `cargo clippy --all-targets -- -D warnings` | čisto |
 | `xmllint` na `rootDesc.xml`, oba SCPD-a i DIDL iz `Browse` | validno |
-| SSDP probe iz druge točke mreže | Rustiio odgovara unicastom s `BOOTID`/`CONFIGID`; u istom scanu nađeni **Serviio (192.168.1.10, DLNADOC/1.50)** i **Samsung TV (192.168.1.100, MediaRenderer + DIAL)** |
+| SSDP probe iz druge točke mreže | Rustiio odgovara unicastom s `BOOTID`/`CONFIGID`; u istom scanu nađeni **Serviio (10.0.0.10, DLNADOC/1.50)** i **Samsung TV (10.0.0.100, MediaRenderer + DIAL)** |
 | `Browse` (root → Filmovi → film) | DIDL s `res protocolInfo`, `size`, `dc:date`, `sec:CaptionInfoEx` + titl kao `text/srt` resurs |
 | `Range: bytes=0-99` | `206 Partial Content` + `Content-Range`; nezadovoljiv range → `416` |
 | `ffprobe` preko HTTP (`/res/5/...mkv`) | h264 1280x720 + aac — **direct play radi** |
@@ -321,7 +321,7 @@ a kartica na dashboardu pokazuje `mpegts · Apple VideoToolbox · h264_videotool
 | inicijalni `NOTIFY` | stigao na pravu slušalicu: `SEQ: 0`, `<SystemUpdateID>1</SystemUpdateID>` |
 | `POST /api/rescan` | drugi `NOTIFY` s `SEQ: 1` i novim `SystemUpdateID` |
 | Docker na .10 | `rustiio Up (healthy)`, 168 objekata (95 video, 44 audio, 29 mapa), `refresh` bez restarta |
-| SSDP iz Maca | `192.168.1.10` se oglašava kao `MediaServer:1` + `ContentDirectory:1` + `ConnectionManager:1` |
+| SSDP iz Maca | `10.0.0.10` se oglašava kao `MediaServer:1` + `ContentDirectory:1` + `ConnectionManager:1` |
 | RAM | ~9 MB idle (Serviio: 207 MB) |
 
 **Napomena:** `serviio.service` je na .10 trenutno **inactive** — usporedba 1:1 na TV-u čeka da se Serviio upali (ili ne, ako Rustiio odmah radi).

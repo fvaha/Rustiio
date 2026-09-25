@@ -86,8 +86,8 @@ mod tests {
             Some(("127.0.0.1".to_string(), 8200, "/healthz".to_string()))
         );
         assert_eq!(
-            parse_url("http://192.168.1.10:8200"),
-            Some(("192.168.1.10".to_string(), 8200, "/healthz".to_string()))
+            parse_url("http://10.0.0.10:8200"),
+            Some(("10.0.0.10".to_string(), 8200, "/healthz".to_string()))
         );
         assert_eq!(
             parse_url("http://box.local/healthz"),

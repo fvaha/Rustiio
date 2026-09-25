@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn user_unit_targets_default() {
         let text =
-            unit(Path::new("/home/vaha/rustiio"), Path::new("/home/vaha/.config/rustiio/config.toml"), true);
+            unit(Path::new("/home/user/rustiio"), Path::new("/home/user/.config/rustiio/config.toml"), true);
         assert!(text.contains("WantedBy=default.target"), "korisnicka jedinica: {text}");
     }
 

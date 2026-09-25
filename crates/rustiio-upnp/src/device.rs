@@ -16,7 +16,7 @@ pub struct DeviceMeta {
     pub model_number: String,
     pub model_description: String,
     pub serial_number: String,
-    /// `http://192.168.1.10:8200` (bez zavrsne kose crte)
+    /// `http://10.0.0.10:8200` (bez zavrsne kose crte)
     pub base_url: String,
 }
 
@@ -119,7 +119,7 @@ mod tests {
             model_number: "0.1.0".to_string(),
             model_description: "DLNA/UPnP media server".to_string(),
             serial_number: "abc-123".to_string(),
-            base_url: "http://192.168.1.10:8200".to_string(),
+            base_url: "http://10.0.0.10:8200".to_string(),
         }
     }
 

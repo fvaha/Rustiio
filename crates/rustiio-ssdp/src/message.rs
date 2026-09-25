@@ -211,11 +211,11 @@ mod tests {
         assert!(byebye.is_byebye());
 
         let resp = Message::parse(
-            "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nST: upnp:rootdevice\r\nLOCATION: http://192.168.1.10:8200/rootDesc.xml\r\n\r\n",
+            "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nST: upnp:rootdevice\r\nLOCATION: http://10.0.0.10:8200/rootDesc.xml\r\n\r\n",
         )
         .expect("parse response");
         assert_eq!(resp.kind, MessageKind::Response);
-        assert_eq!(resp.location(), Some("http://192.168.1.10:8200/rootDesc.xml"));
+        assert_eq!(resp.location(), Some("http://10.0.0.10:8200/rootDesc.xml"));
     }
 
     #[test]

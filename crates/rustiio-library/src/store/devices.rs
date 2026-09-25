@@ -144,7 +144,7 @@ mod tests {
         let store = Store::open_memory().expect("baza");
         let uredjaj = StoredDevice {
             key: "ua:VLC/3.0.23".into(),
-            ip: "192.168.1.157".into(),
+            ip: "10.0.0.157".into(),
             user_agent: "VLC/3.0.23 LibVLC/3.0.23".into(),
             friendly_name: None,
             profile_id: "vlc".into(),
@@ -184,7 +184,7 @@ mod tests {
             &store,
             &StoredDevice {
                 key: kljuc.into(),
-                ip: "192.168.1.100".into(),
+                ip: "10.0.0.100".into(),
                 user_agent: "DLNADOC/1.50".into(),
                 friendly_name: Some("TV".into()),
                 profile_id: "samsung-tv".into(),

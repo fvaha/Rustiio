@@ -229,7 +229,7 @@ bind = "0.0.0.0"
 http_port = 8200
 # Address clients should be told to reach. Empty means auto-detect; set it manually
 # on a machine with several networks.
-advertise_ip = "192.168.1.10"
+advertise_ip = "10.0.0.10"
 max_age_secs = 1800
 ssdp = true
 
@@ -272,7 +272,7 @@ description = "Plays MP4/MKV with H.264 or HEVC up to 4K; wants AC-3 in TS strea
 user_agent = ["VendorTV", "SomeVendor"]
 friendly_name = ["[TV]"]
 # device_type = ["MediaRenderer"]
-# ip = ["192.168.1.50"]        # strongest signal, for manually pinned devices
+# ip = ["10.0.0.50"]           # strongest signal, for manually pinned devices
 
 [video]                        # what the device decodes on its own
 containers = ["mp4", "mkv", "ts", "m2ts", "mov"]

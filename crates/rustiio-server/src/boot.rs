@@ -60,7 +60,7 @@ pub struct Booted {
     pub identity: DeviceIdentity,
     pub ip: Ipv4Addr,
     pub port: u16,
-    /// Npr. `http://192.168.1.10:8200` — isto što ide u DIDL `res`.
+    /// Npr. `http://10.0.0.10:8200` — isto što ide u DIDL `res`.
     pub base_url: String,
     pub listener: Option<TcpListener>,
     pub addr: SocketAddr,

@@ -204,7 +204,7 @@ fn remux_decision(profile: &Profile, reasons: Vec<String>, hw: &HwSupport, media
 fn output_container(profile: &Profile) -> (&'static str, &'static str) {
     match profile.transcode.container.as_str() {
         "mp4" => ("video/mp4", "mp4"),
-        // MKV: TV (MU6172) pusta MKV i kad je stream; `mpegts` mu se prikaze
+        // MKV: TV pusta MKV i kad je stream; `mpegts` mu se prikaze
         // kao "mp2t" i ne pokrene se, pa kontejner mora biti matroska.
         "mkv" => ("video/x-matroska", "matroska"),
         // Uz `DLNA.ORG_PN=MPEG_TS_*` ide MIME `video/mpeg`. Samsung na `video/mpeg`
@@ -339,8 +339,6 @@ fn transcode_decision(
         hardware_decode: video && hw.hardware_decode,
     }
 }
-
-/// Kodek iz imena enkodera (`hevc_nvenc` → hevc, `libx264` → h264).
 
 fn video_supported(media: &MediaInfo, profile: &Profile, reasons: &mut Vec<String>) -> bool {
     let Some(video) = &media.video else {

@@ -40,7 +40,7 @@ mod tests {
 
     #[test]
     fn parse_ip_accepts_v4() {
-        assert_eq!(parse_ip("192.168.1.10"), Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))));
+        assert_eq!(parse_ip("10.0.0.10"), Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 10))));
         assert_eq!(parse_ip("  "), None);
         assert_eq!(parse_ip("nije-ip"), None);
     }
@@ -48,7 +48,7 @@ mod tests {
     #[test]
     fn lan_capable_rejects_loopback() {
         assert!(!is_lan_capable(&IpAddr::V4(Ipv4Addr::LOCALHOST)));
-        assert!(is_lan_capable(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))));
+        assert!(is_lan_capable(&IpAddr::V4(Ipv4Addr::new(10, 0, 0, 10))));
     }
 
     #[test]

@@ -313,7 +313,7 @@ fn scan_dir(
         .iter()
         .filter(|file| subtitles::is_subtitle_file(file))
         .cloned()
-        .chain(podmapa_titlova(&dir).into_iter().filter(|file| subtitles::is_subtitle_file(file)))
+        .chain(podmapa_titlova(dir).into_iter().filter(|file| subtitles::is_subtitle_file(file)))
         .collect();
 
     for file in files {

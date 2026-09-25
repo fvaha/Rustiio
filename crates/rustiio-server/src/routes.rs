@@ -1515,7 +1515,7 @@ async fn api_decision(
     .into_response()
 }
 
-/// `ua:SEC_HHP_[TV]UE55MU6172/1.0` → `device-sec-hhp-tv-ue55mu6172-1-0`.
+/// `ua:SEC_HHP_[TV]ExampleTV/1.0` → `device-sec-hhp-tv-exampletv-1-0`.
 fn profile_id_from_key(key: &str) -> String {
     let cleaned: String =
         key.to_ascii_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
@@ -1700,7 +1700,7 @@ async fn api_art(State(state): State<AppState>, Path(id): Path<String>) -> Respo
                         header::ETAG,
                         format!(
                             "\"{}\"",
-                            crate::art::version_of(&state.store, &state.enricher.art_dir(), item_id)
+                            crate::art::version_of(&state.store, state.enricher.art_dir(), item_id)
                                 .unwrap_or_else(|| "0".to_string())
                         ),
                     ),

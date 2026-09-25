@@ -209,8 +209,8 @@ mod tests {
 
     fn cfg() -> SsdpConfig {
         SsdpConfig {
-            interface: Ipv4Addr::new(192, 168, 1, 10),
-            location: "http://192.168.1.10:8200/rootDesc.xml".to_string(),
+            interface: Ipv4Addr::new(10, 0, 0, 10),
+            location: "http://10.0.0.10:8200/rootDesc.xml".to_string(),
             server: "linux/x86_64 UPnP/1.0 Rustiio/0.1".to_string(),
             udn: "uuid:abc".to_string(),
             device_type: rustiio_core::DEVICE_TYPE.to_string(),

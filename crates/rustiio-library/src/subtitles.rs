@@ -359,153 +359,6 @@ pub fn poredaj(staze: &mut [SubtitleTrack]) {
     });
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn vanjski(video: &str, ime: &str) -> Option<SubtitleTrack> {
-        external_track(video, &PathBuf::from("/media").join(ime))
-    }
-
-    #[test]
-    fn jezik_se_cita_iz_koda_i_imena() {
-        assert_eq!(language_name("en"), Some("English"));
-        assert_eq!(language_name("ENG"), Some("English"));
-        assert_eq!(language_name("English"), Some("English"));
-        assert_eq!(language_name("spa"), Some("Spanish"));
-        assert_eq!(language_name("es"), Some("Spanish"));
-        assert_eq!(language_name("hrv"), Some("Croatian"));
-        assert_eq!(language_name("hr"), Some("Croatian"));
-        assert_eq!(language_name("deu"), Some("German"));
-        assert_eq!(language_name("ger"), Some("German"));
-        assert_eq!(language_name("und"), None);
-        assert_eq!(language_name(""), None);
-    }
-
-    #[test]
-    fn titl_uz_video_bez_jezika_ima_prazan_repak() {
-        let staza = vanjski("Lanterns.S01E06", "Lanterns.S01E06.srt").expect("titl");
-        assert_eq!(staza.language, None);
-        assert_eq!(staza.display_name(), "srt");
-    }
-
-    #[test]
-    fn jezik_i_oznake_iz_imena() {
-        let staza = vanjski("Film", "Film.en.srt").expect("titl");
-        assert_eq!(staza.language.as_deref(), Some("en"));
-        assert_eq!(staza.display_name(), "English");
-
-        let staza = vanjski("Film", "Film.hrv.forced.srt").expect("titl");
-        assert_eq!(staza.language_name(), Some("Croatian"));
-        assert!(staza.forced);
-        assert_eq!(staza.display_name(), "Croatian (forced)");
-
-        let staza = vanjski("Film", "Film.eng.SDH.srt").expect("titl");
-        assert_eq!(staza.language_name(), Some("English"));
-        assert!(staza.sdh);
-        assert_eq!(staza.display_name(), "English (SDH)");
-
-        let staza = vanjski("Film", "Film.Spanish.srt").expect("titl");
-        assert_eq!(staza.language_name(), Some("Spanish"));
-    }
-
-    #[test]
-    fn slicna_imena_i_tehnicki_repak_se_ne_lijepe() {
-        assert!(vanjski("Film", "Film2.srt").is_none(), "Film2 nije Film");
-        assert!(vanjski("Film", "Film.1080p.srt").is_none(), "1080p nije jezik");
-        assert!(vanjski("Film", "Film.webrip.srt").is_none(), "webrip nije jezik");
-        assert!(vanjski("Film", "Drugi.srt").is_none());
-        assert!(vanjski("Film", "Film.en.forced.srt").is_some());
-    }
-
-    #[test]
-    fn slikovni_titl_nije_tekst() {
-        let mut staza = vanjski("Film", "Film.en.srt").expect("titl");
-        assert!(staza.is_text());
-        staza.codec = "hdmv_pgs_subtitle".to_string();
-        assert!(!staza.is_text(), "PGS se ne moze posluziti kao srt");
-        staza.codec = "vobsub".to_string();
-        assert!(!staza.is_text());
-        staza.codec = "sub".to_string();
-        assert!(staza.is_text(), "MicroDVD se moze prevesti u srt");
-    }
-
-    #[test]
-    fn ugradjena_staza_dobiva_ime_za_url() {
-        let staza = SubtitleTrack {
-            source: Source::Embedded { index: 3 },
-            codec: "subrip".to_string(),
-            language: Some("hrv".to_string()),
-            label: Some("SDH".to_string()),
-            forced: false,
-            sdh: true,
-            default: true,
-        };
-        assert_eq!(staza.serve_name("Lanterns.S01E06"), "Lanterns.S01E06.hrv.srt");
-        assert_eq!(staza.display_name(), "Croatian (SDH)");
-        assert_eq!(staza.path(), None);
-    }
-
-    #[test]
-    fn jezik_se_pogadja_iz_teksta_titla() {
-        let hrvatski = "1\n00:00:01,000 --> 00:00:03,000\nŠto je ovo? Nije dobro, ali samo trenutak.\n\n2\n00:00:04,000 --> 00:00:06,000\nSada ću ti reći što se dogodilo jer se bojim.\n";
-        assert_eq!(guess_language(hrvatski), Some("Croatian"));
-
-        let engleski = "1\n00:00:01,000 --> 00:00:03,000\nWhat is this? That is not good, and you know it.\n\n2\n00:00:04,000 --> 00:00:06,000\nI have to tell you what happened, because this is not over.\n";
-        assert_eq!(guess_language(engleski), Some("English"));
-
-        let spanski = "1\n00:00:01,000 --> 00:00:03,000\n¿Qué es esto? No está bien, pero los niños están aquí.\n\n2\n00:00:04,000 --> 00:00:06,000\nTengo que decirte lo que pasó con una señora muy simpática.\n";
-        assert_eq!(guess_language(spanski), Some("Spanish"));
-
-        let njemacki = "1\n00:00:01,000 --> 00:00:03,000\nWas ist das? Das ist nicht gut und ich weiß es.\n\n2\n00:00:04,000 --> 00:00:06,000\nWir müssen gehen, aber sie ist noch hier mit dem Auto.\n";
-        assert_eq!(guess_language(njemacki), Some("German"));
-
-        let ceski = "1\n00:00:01,000 --> 00:00:03,000\nVím, že to zní šíleně, ale musím ti to říct.\n\n2\n00:00:04,000 --> 00:00:06,000\nKdyž jsem byl malý, říkali mi, že se to nedá.\n";
-        assert_eq!(guess_language(ceski), Some("Czech"), "ceski ne smije proci kao hrvatski");
-
-        // Prekratak uzorak ili bez signala — bolje ne tvrditi nista.
-        assert_eq!(guess_language("Zdravo"), None);
-        assert_eq!(guess_language("1\n00:00:01,000 --> 00:00:02,000\n...\n"), None);
-    }
-
-    #[test]
-    fn sortiranje_stavlja_tekst_i_default_naprijed() {
-        let mut staze = vec![
-            SubtitleTrack {
-                source: Source::Embedded { index: 5 },
-                codec: "hdmv_pgs_subtitle".to_string(),
-                language: Some("eng".to_string()),
-                label: None,
-                forced: false,
-                sdh: false,
-                default: false,
-            },
-            SubtitleTrack {
-                source: Source::Embedded { index: 1 },
-                codec: "subrip".to_string(),
-                language: Some("spa".to_string()),
-                label: None,
-                forced: false,
-                sdh: false,
-                default: false,
-            },
-            SubtitleTrack {
-                source: Source::Embedded { index: 2 },
-                codec: "subrip".to_string(),
-                language: Some("hrv".to_string()),
-                label: None,
-                forced: false,
-                sdh: false,
-                default: true,
-            },
-        ];
-        poredaj(&mut staze);
-        assert_eq!(staze[0].language_name(), Some("Croatian"), "default ide prvi");
-        assert_eq!(staze[1].language_name(), Some("Spanish"));
-        assert!(!staze[2].is_text(), "slikovni ide na kraj");
-    }
-}
-
 /// Jezgro bez oznake (kao u `Lanterns`: `subrip`, bez `language`/`title`) — TV bi dobio
 /// `Language 1`. Zato jezik pogadjamo iz **teksta titla**: kratki uzorak je dovoljan.
 pub fn guess_language(sample: &str) -> Option<&'static str> {
@@ -662,4 +515,151 @@ pub fn fill_languages(staze: &mut [SubtitleTrack], video: &Path, ffmpeg: &str) -
         }
     }
     pogodjeno
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn vanjski(video: &str, ime: &str) -> Option<SubtitleTrack> {
+        external_track(video, &PathBuf::from("/media").join(ime))
+    }
+
+    #[test]
+    fn jezik_se_cita_iz_koda_i_imena() {
+        assert_eq!(language_name("en"), Some("English"));
+        assert_eq!(language_name("ENG"), Some("English"));
+        assert_eq!(language_name("English"), Some("English"));
+        assert_eq!(language_name("spa"), Some("Spanish"));
+        assert_eq!(language_name("es"), Some("Spanish"));
+        assert_eq!(language_name("hrv"), Some("Croatian"));
+        assert_eq!(language_name("hr"), Some("Croatian"));
+        assert_eq!(language_name("deu"), Some("German"));
+        assert_eq!(language_name("ger"), Some("German"));
+        assert_eq!(language_name("und"), None);
+        assert_eq!(language_name(""), None);
+    }
+
+    #[test]
+    fn titl_uz_video_bez_jezika_ima_prazan_repak() {
+        let staza = vanjski("Lanterns.S01E06", "Lanterns.S01E06.srt").expect("titl");
+        assert_eq!(staza.language, None);
+        assert_eq!(staza.display_name(), "srt");
+    }
+
+    #[test]
+    fn jezik_i_oznake_iz_imena() {
+        let staza = vanjski("Film", "Film.en.srt").expect("titl");
+        assert_eq!(staza.language.as_deref(), Some("en"));
+        assert_eq!(staza.display_name(), "English");
+
+        let staza = vanjski("Film", "Film.hrv.forced.srt").expect("titl");
+        assert_eq!(staza.language_name(), Some("Croatian"));
+        assert!(staza.forced);
+        assert_eq!(staza.display_name(), "Croatian (forced)");
+
+        let staza = vanjski("Film", "Film.eng.SDH.srt").expect("titl");
+        assert_eq!(staza.language_name(), Some("English"));
+        assert!(staza.sdh);
+        assert_eq!(staza.display_name(), "English (SDH)");
+
+        let staza = vanjski("Film", "Film.Spanish.srt").expect("titl");
+        assert_eq!(staza.language_name(), Some("Spanish"));
+    }
+
+    #[test]
+    fn slicna_imena_i_tehnicki_repak_se_ne_lijepe() {
+        assert!(vanjski("Film", "Film2.srt").is_none(), "Film2 nije Film");
+        assert!(vanjski("Film", "Film.1080p.srt").is_none(), "1080p nije jezik");
+        assert!(vanjski("Film", "Film.webrip.srt").is_none(), "webrip nije jezik");
+        assert!(vanjski("Film", "Drugi.srt").is_none());
+        assert!(vanjski("Film", "Film.en.forced.srt").is_some());
+    }
+
+    #[test]
+    fn slikovni_titl_nije_tekst() {
+        let mut staza = vanjski("Film", "Film.en.srt").expect("titl");
+        assert!(staza.is_text());
+        staza.codec = "hdmv_pgs_subtitle".to_string();
+        assert!(!staza.is_text(), "PGS se ne moze posluziti kao srt");
+        staza.codec = "vobsub".to_string();
+        assert!(!staza.is_text());
+        staza.codec = "sub".to_string();
+        assert!(staza.is_text(), "MicroDVD se moze prevesti u srt");
+    }
+
+    #[test]
+    fn ugradjena_staza_dobiva_ime_za_url() {
+        let staza = SubtitleTrack {
+            source: Source::Embedded { index: 3 },
+            codec: "subrip".to_string(),
+            language: Some("hrv".to_string()),
+            label: Some("SDH".to_string()),
+            forced: false,
+            sdh: true,
+            default: true,
+        };
+        assert_eq!(staza.serve_name("Lanterns.S01E06"), "Lanterns.S01E06.hrv.srt");
+        assert_eq!(staza.display_name(), "Croatian (SDH)");
+        assert_eq!(staza.path(), None);
+    }
+
+    #[test]
+    fn jezik_se_pogadja_iz_teksta_titla() {
+        let hrvatski = "1\n00:00:01,000 --> 00:00:03,000\nŠto je ovo? Nije dobro, ali samo trenutak.\n\n2\n00:00:04,000 --> 00:00:06,000\nSada ću ti reći što se dogodilo jer se bojim.\n";
+        assert_eq!(guess_language(hrvatski), Some("Croatian"));
+
+        let engleski = "1\n00:00:01,000 --> 00:00:03,000\nWhat is this? That is not good, and you know it.\n\n2\n00:00:04,000 --> 00:00:06,000\nI have to tell you what happened, because this is not over.\n";
+        assert_eq!(guess_language(engleski), Some("English"));
+
+        let spanski = "1\n00:00:01,000 --> 00:00:03,000\n¿Qué es esto? No está bien, pero los niños están aquí.\n\n2\n00:00:04,000 --> 00:00:06,000\nTengo que decirte lo que pasó con una señora muy simpática.\n";
+        assert_eq!(guess_language(spanski), Some("Spanish"));
+
+        let njemacki = "1\n00:00:01,000 --> 00:00:03,000\nWas ist das? Das ist nicht gut und ich weiß es.\n\n2\n00:00:04,000 --> 00:00:06,000\nWir müssen gehen, aber sie ist noch hier mit dem Auto.\n";
+        assert_eq!(guess_language(njemacki), Some("German"));
+
+        let ceski = "1\n00:00:01,000 --> 00:00:03,000\nVím, že to zní šíleně, ale musím ti to říct.\n\n2\n00:00:04,000 --> 00:00:06,000\nKdyž jsem byl malý, říkali mi, že se to nedá.\n";
+        assert_eq!(guess_language(ceski), Some("Czech"), "ceski ne smije proci kao hrvatski");
+
+        // Prekratak uzorak ili bez signala — bolje ne tvrditi nista.
+        assert_eq!(guess_language("Zdravo"), None);
+        assert_eq!(guess_language("1\n00:00:01,000 --> 00:00:02,000\n...\n"), None);
+    }
+
+    #[test]
+    fn sortiranje_stavlja_tekst_i_default_naprijed() {
+        let mut staze = vec![
+            SubtitleTrack {
+                source: Source::Embedded { index: 5 },
+                codec: "hdmv_pgs_subtitle".to_string(),
+                language: Some("eng".to_string()),
+                label: None,
+                forced: false,
+                sdh: false,
+                default: false,
+            },
+            SubtitleTrack {
+                source: Source::Embedded { index: 1 },
+                codec: "subrip".to_string(),
+                language: Some("spa".to_string()),
+                label: None,
+                forced: false,
+                sdh: false,
+                default: false,
+            },
+            SubtitleTrack {
+                source: Source::Embedded { index: 2 },
+                codec: "subrip".to_string(),
+                language: Some("hrv".to_string()),
+                label: None,
+                forced: false,
+                sdh: false,
+                default: true,
+            },
+        ];
+        poredaj(&mut staze);
+        assert_eq!(staze[0].language_name(), Some("Croatian"), "default ide prvi");
+        assert_eq!(staze[1].language_name(), Some("Spanish"));
+        assert!(!staze[2].is_text(), "slikovni ide na kraj");
+    }
 }

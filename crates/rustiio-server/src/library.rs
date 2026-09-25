@@ -92,6 +92,31 @@ pub fn device_key(headers: &axum::http::HeaderMap) -> String {
         .unwrap_or_else(|| "nepoznat".to_string())
 }
 
+/// Ugradjeni titlovi za DIDL: `Node.subtitles` nosi samo vanjske datoteke, a staze
+/// unutar kontejnera (i njihovi jezici) zive u probe kesu.
+pub struct EmbeddedSubtitles {
+    pub catalog: std::sync::Arc<tokio::sync::RwLock<rustiio_library::Catalog>>,
+    pub probe: std::sync::Arc<rustiio_library::MediaProbe>,
+}
+
+impl rustiio_cds::browse::SubtitleLookup for EmbeddedSubtitles {
+    fn embedded(&self, item_id: &str) -> Vec<rustiio_library::subtitles::SubtitleTrack> {
+        // `try_read`: DIDL se gradi u async handleru, a zakljucan katalog znaci samo
+        // da cemo titlove pokazati u sljedecem pregledu (nikad ne blokiramo TV).
+        let Ok(catalog) = self.catalog.try_read() else {
+            return Vec::new();
+        };
+        let Some(node) = catalog.get(item_id) else {
+            return Vec::new();
+        };
+        match self.probe.get(&node.path) {
+            Some(info) => info.subtitles,
+            // Kes nije pun (zapis nikad nije proban) — probaj sad, ffprobe je brz.
+            None => self.probe.probe(&node.path).map(|info| info.subtitles).unwrap_or_default(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,30 +219,5 @@ mod tests {
         let mut only_agent = axum::http::HeaderMap::new();
         only_agent.insert(axum::http::header::USER_AGENT, "VLC/3.0".parse().unwrap());
         assert_eq!(device_key(&only_agent), "VLC/3.0");
-    }
-}
-
-/// Ugradjeni titlovi za DIDL: `Node.subtitles` nosi samo vanjske datoteke, a staze
-/// unutar kontejnera (i njihovi jezici) zive u probe kesu.
-pub struct EmbeddedSubtitles {
-    pub catalog: std::sync::Arc<tokio::sync::RwLock<rustiio_library::Catalog>>,
-    pub probe: std::sync::Arc<rustiio_library::MediaProbe>,
-}
-
-impl rustiio_cds::browse::SubtitleLookup for EmbeddedSubtitles {
-    fn embedded(&self, item_id: &str) -> Vec<rustiio_library::subtitles::SubtitleTrack> {
-        // `try_read`: DIDL se gradi u async handleru, a zakljucan katalog znaci samo
-        // da cemo titlove pokazati u sljedecem pregledu (nikad ne blokiramo TV).
-        let Ok(catalog) = self.catalog.try_read() else {
-            return Vec::new();
-        };
-        let Some(node) = catalog.get(item_id) else {
-            return Vec::new();
-        };
-        match self.probe.get(&node.path) {
-            Some(info) => info.subtitles,
-            // Kes nije pun (zapis nikad nije proban) — probaj sad, ffprobe je brz.
-            None => self.probe.probe(&node.path).map(|info| info.subtitles).unwrap_or_default(),
-        }
     }
 }

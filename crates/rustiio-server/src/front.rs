@@ -75,8 +75,8 @@ mod tests {
 
     #[test]
     fn host_se_uzima_iz_zaglavlja() {
-        let head = "get / http/1.1\r\nhost: 192.168.1.10:8200\r\naccept: text/html\r\n\r\n";
-        assert_eq!(host_zaglavlja(head).as_deref(), Some("192.168.1.10:8200"));
+        let head = "get / http/1.1\r\nhost: 10.0.0.10:8200\r\naccept: text/html\r\n\r\n";
+        assert_eq!(host_zaglavlja(head).as_deref(), Some("10.0.0.10:8200"));
         assert!(host_zaglavlja("get / http/1.1\r\nhost:\r\n\r\n").is_none());
         assert!(host_zaglavlja("get / http/1.1\r\n\r\n").is_none());
     }

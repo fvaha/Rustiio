@@ -81,7 +81,7 @@
   /// Biranje mape kroz sustav: -1 zatvoreno, -2 nova mapa, inače indeks retka.
   let pickFor = $state(-1)
 
-  /// Ime mape iz putanje ("/home/vaha/Filmovi" → "Filmovi").
+  /// Ime mape iz putanje ("/home/user/Filmovi" → "Filmovi").
   function folderName(path) {
     const parts = String(path).split(/[/\\]/).filter(Boolean)
     return parts.length ? parts[parts.length - 1] : ''

@@ -598,7 +598,7 @@
           </label>
           <label class="polje">
             <span>{t('devices.rule_ip')}</span>
-            <input class="input" bind:value={pravila.rule_ip} placeholder="192.168.1.100" />
+            <input class="input" bind:value={pravila.rule_ip} placeholder="10.0.0.100" />
           </label>
         </div>
 

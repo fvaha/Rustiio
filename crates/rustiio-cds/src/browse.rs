@@ -43,7 +43,7 @@ pub trait PlaybackResolver {
 ///
 /// `Debug`/`Default` su rucno napisani jer `playback` je trait objekt (nije Debug).
 pub struct BrowseOptions<'a> {
-    /// `http://192.168.1.10:8200`
+    /// `http://10.0.0.10:8200`
     pub base_url: &'a str,
     /// Gornja granica objekata u odgovoru.
     pub max_results: u32,

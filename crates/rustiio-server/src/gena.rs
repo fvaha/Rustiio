@@ -131,7 +131,7 @@ fn unique_stamp() -> u64 {
     if nanos <= previous { previous + 1 } else { nanos }
 }
 
-/// `CALLBACK` header: `<http://192.168.1.100:55000/ev> <http://10.0.0.5/ev>`.
+/// `CALLBACK` header: `<http://10.0.0.100:55000/ev> <http://10.0.0.5/ev>`.
 pub fn parse_callbacks(value: &str) -> Vec<String> {
     let mut out = Vec::new();
     for chunk in value.split('<') {
@@ -154,7 +154,7 @@ pub fn parse_callbacks(value: &str) -> Vec<String> {
     out
 }
 
-/// `http://192.168.1.100:55000/upnp/event` -> `("192.168.1.100:55000", "/upnp/event")`.
+/// `http://10.0.0.100:55000/upnp/event` -> `("10.0.0.100:55000", "/upnp/event")`.
 pub fn parse_callback_url(url: &str) -> Option<(String, String)> {
     let rest = url.strip_prefix("http://")?;
     let (authority, path) = match rest.split_once('/') {
@@ -280,8 +280,8 @@ mod tests {
 
     #[test]
     fn parses_callback_list() {
-        let callbacks = parse_callbacks("<http://192.168.1.100:55000/ev> <http://10.0.0.5/ev2>");
-        assert_eq!(callbacks, vec!["http://192.168.1.100:55000/ev", "http://10.0.0.5/ev2"]);
+        let callbacks = parse_callbacks("<http://10.0.0.100:55000/ev> <http://10.0.0.5/ev2>");
+        assert_eq!(callbacks, vec!["http://10.0.0.100:55000/ev", "http://10.0.0.5/ev2"]);
         assert_eq!(parse_callbacks("<http://1.2.3.4/only>"), vec!["http://1.2.3.4/only"]);
         assert!(parse_callbacks("").is_empty());
     }

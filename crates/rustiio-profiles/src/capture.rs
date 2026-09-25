@@ -161,9 +161,9 @@ mod tests {
 
     fn identity() -> DeviceIdentity {
         DeviceIdentity {
-            user_agent: Some("SEC_HHP_[TV]UE55MU6172/1.0".to_string()),
+            user_agent: Some("SEC_HHP_[TV]ExampleTV/1.0".to_string()),
             friendly_name: Some("[TV] Samsung 6 Series".to_string()),
-            ip: Some("192.168.1.100".to_string()),
+            ip: Some("10.0.0.100".to_string()),
             device_type: None,
         }
     }
@@ -173,7 +173,7 @@ mod tests {
         let capture = Capture::new();
         let headers = vec![
             ("transfermode.dlna.org".to_string(), "Streaming".to_string()),
-            ("user-agent".to_string(), "SEC_HHP_[TV]UE55MU6172/1.0".to_string()),
+            ("user-agent".to_string(), "SEC_HHP_[TV]ExampleTV/1.0".to_string()),
         ];
         capture.record(&identity(), "samsung-tv", &headers);
         let second = capture.record(&identity(), "samsung-tv", &headers);
@@ -207,7 +207,7 @@ mod tests {
         let text = capture.profile_toml(&identity().key(), &base, "moj-samsung").expect("toml");
         let parsed: Profile = toml::from_str(&text).expect("profil se moze parsirati");
         assert_eq!(parsed.id, "moj-samsung");
-        assert_eq!(parsed.rules.user_agent, vec!["SEC_HHP_[TV]UE55MU6172/1.0"]);
+        assert_eq!(parsed.rules.user_agent, vec!["SEC_HHP_[TV]ExampleTV/1.0"]);
         assert!(parsed.rules.ip.is_empty(), "IP se ne upisuje u pravila");
         assert!(parsed.supports_video_codec("hevc"), "capabilities se naslijede");
 
