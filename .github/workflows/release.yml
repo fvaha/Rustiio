@@ -76,18 +76,31 @@ jobs:
             rm -f pak
           }
 
-          preuzmi "${{ matrix.ffmpeg_url }}" ffmpeg
-          preuzmi "${{ matrix.ffprobe_url }}" ffprobe
-
           case "${{ matrix.os }}" in windows-*) suf=".exe" ;; *) suf="" ;; esac
-          mv "ffmpeg$suf" "ffmpeg-${{ matrix.target }}$suf"
-          mv "ffprobe$suf" "ffprobe-${{ matrix.target }}$suf"
+          target="${{ matrix.target }}"
+
+          preuzmi "${{ matrix.ffmpeg_url }}" ffmpeg
+          # Windowsov gyan zip nosi i ffprobe.exe (109 MB) — bez ovoga se skida dvaput.
+          if [ ! -f "ffprobe$suf" ]; then preuzmi "${{ matrix.ffprobe_url }}" ffprobe; fi
+
+          mv "ffmpeg$suf" "ffmpeg-$target$suf"
+          mv "ffprobe$suf" "ffprobe-$target$suf"
+
+          # gyan zip s `unzip -j` raspe i `doc/*.html` i LICENSE po mapi — u
+          # `binaries/` smiju ostati samo sidecari (inače provjera niže padne na HTML-u).
+          for x in *; do
+            case "$x" in
+              "ffmpeg-$target$suf"|"ffprobe-$target$suf") ;;
+              *) rm -rf -- "$x" ;;
+            esac
+          done
           chmod +x ffmpeg-* ffprobe-* 2>/dev/null || true
 
           # Provjera da u paket ide stvarni binarij, a ne zip/HTML s pogrešnog linka:
           # veličina > 1 MB i magic bajtovi (Mach-O, ELF, PE). Pokretanje `-version` je
           # samo upozorenje jer cross-target binarij ne mora biti izvršiv na runneru.
-          for f in ffmpeg-* ffprobe-*; do
+          for f in "ffmpeg-$target$suf" "ffprobe-$target$suf"; do
+            if [ ! -f "$f" ]; then echo "GREŠKA: $f ne postoji"; exit 1; fi
             velicina=$(wc -c < "$f")
             if [ "$velicina" -lt 1048576 ]; then
               echo "GREŠKA: $f je premalen ($velicina B) — nije pravi binarij"; exit 1
