@@ -16,8 +16,28 @@ pub struct DeviceIdentity {
 }
 
 impl DeviceIdentity {
-    /// Stabilan kljuc uredjaja za capture i watch-state (UA je najpouzdaniji).
+    /// Stabilan kljuc uredjaja za capture i watch-state.
+    ///
+    /// Prednost ima **adresa**: DLNA uredjaj salje User-Agent samo na nekim
+    /// zahtjevima (Samsung ga ne posalje kad trazi stream), pa bi isti televizor
+    /// inace zavrsio kao dva uredjaja — jedan prepoznat po UA, drugi bez njega.
+    /// User-Agent i dalje odlucuje koji profil vrijedi (matcher gleda cijeli
+    /// identitet), ali zapis i vezani profil ostaju jedan po uredjaju.
     pub fn key(&self) -> String {
+        // Lokalne adrese (127.x) ne razlikuju uredjaje, pa tamo UA ostaje kljuc.
+        let adresa = self
+            .ip
+            .as_deref()
+            .map(str::trim)
+            .filter(|ip| !ip.is_empty() && !ip.starts_with("127.") && ip.trim() != "::1")
+            .map(|ip| {
+                ip.split_once(':')
+                    .map(|(cisto, _)| cisto.to_string())
+                    .unwrap_or_else(|| ip.to_string())
+            });
+        if let Some(ip) = adresa {
+            return format!("ip:{ip}");
+        }
         if let Some(agent) = self.user_agent.as_deref().filter(|value| !value.is_empty()) {
             return format!("ua:{}", agent.trim());
         }
@@ -300,8 +320,15 @@ mod tests {
     }
 
     #[test]
-    fn device_key_prefers_user_agent() {
-        assert_eq!(samsung().key(), "ua:SEC_HHP_[TV]UE55MU6172/1.0");
+    fn device_key_is_the_address_so_one_tv_is_one_device() {
+        // Samsung posalje User-Agent samo na nekim zahtjevima; da kljuc ostane UA,
+        // isti televizor bi zavrsio kao dva uredjaja (jedan s profilom, drugi bez).
+        let mut tv = samsung();
+        tv.ip = Some("192.168.1.100".into());
+        assert_eq!(tv.key(), "ip:192.168.1.100");
+        // Lokalne adrese ne razlikuju uredjaje — tamo UA ostaje kljuc.
+        tv.ip = Some("127.0.0.1".into());
+        assert_eq!(tv.key(), "ua:SEC_HHP_[TV]UE55MU6172/1.0");
         let bare = DeviceIdentity { ip: Some("10.0.0.5".into()), ..Default::default() };
         assert_eq!(bare.key(), "ip:10.0.0.5");
     }

@@ -135,6 +135,11 @@ pub struct ServerSection {
     pub ssdp: bool,
     /// Razina loga: trace|debug|info|warn|error.
     pub log_level: String,
+    /// HTTPS port za web sučelje (`None` = samo HTTP). Televizor ostaje na HTTP-u.
+    pub https_port: Option<u16>,
+    /// PEM certifikat i privatni ključ za HTTPS.
+    pub tls_cert: Option<String>,
+    pub tls_key: Option<String>,
 }
 
 impl Default for ServerSection {
@@ -143,6 +148,9 @@ impl Default for ServerSection {
             friendly_name: None,
             bind: "0.0.0.0".to_string(),
             http_port: DEFAULT_HTTP_PORT,
+            https_port: None,
+            tls_cert: None,
+            tls_key: None,
             advertise_ip: None,
             udn: None,
             max_age_secs: DEFAULT_MAX_AGE,

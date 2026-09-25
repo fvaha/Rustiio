@@ -19,6 +19,8 @@ rustiio-transcode.workspace = true
 rustiio-upnp.workspace = true
 anyhow.workspace = true
 axum = { workspace = true, features = ["ws"] }
+axum-server = { workspace = true }
+rustls = { workspace = true }
 futures-core.workspace = true
 tower-http.workspace = true
 serde_json.workspace = true

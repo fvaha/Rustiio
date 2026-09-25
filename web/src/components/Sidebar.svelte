@@ -1,7 +1,7 @@
 <script>
   // Lijevi stupac: znak, navigacija i stanje servera u podnožju.
   import { t, i18n, setLocale, languages } from '../lib/i18n.svelte.js'
-  import { store, rescan } from '../lib/store.svelte.js'
+  import { store, rescan, restartServer } from '../lib/store.svelte.js'
   import { uptime } from '../lib/format.js'
   import { TABS } from '../lib/nav.js'
   import Icon from './Icon.svelte'
@@ -63,6 +63,10 @@
     </div>
     <button class="btn scan" title={t('common.scan_hint')} onclick={rescan}>
       ⟳ {t('common.scan')}
+    </button>
+    <button class="btn ghost" style="width: 100%; margin-top: 6px" title={t('common.restart_hint')}
+      onclick={restartServer}>
+      ⏻ {t('common.restart')}
     </button>
     <div class="tiny faint" style="margin-top: 4px">{t('common.auto_scan')}
     </div>

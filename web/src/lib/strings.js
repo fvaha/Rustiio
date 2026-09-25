@@ -77,6 +77,11 @@ export const hr = {
     auto_scan: 'Knjižnica se skenira sama',
     refresh_meta: 'Osvježi metapodatke',
     refresh_meta_hint: 'Ponovno dohvati naslov i poster',
+    restart: 'Restart servisa',
+    restart_hint: 'Prekini i ponovno pokreni servis',
+    restarting: 'Restartam servis…',
+    restart_done: 'Servis je natrag',
+    restart_slow: 'Servis se još diže — provjeri za koji trenutak',
   },
   dashboard: {
     title: 'Pregled',
@@ -481,6 +486,11 @@ export const en = {
     auto_scan: 'Library scans itself',
     refresh_meta: 'Refresh metadata',
     refresh_meta_hint: 'Re-fetch title and poster',
+    restart: 'Restart service',
+    restart_hint: 'Stop and start the service again',
+    restarting: 'Restarting the service…',
+    restart_done: 'Service is back',
+    restart_slow: 'Service is still starting — check again shortly',
   },
   dashboard: {
     title: 'Overview',

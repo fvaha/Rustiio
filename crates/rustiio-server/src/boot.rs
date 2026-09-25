@@ -84,6 +84,40 @@ impl Booted {
         let Some(listener) = self.listener.take() else {
             anyhow::bail!("server je već poslužen");
         };
+        // Rustls bez odabranog kripto providera paničari; `ring` je dovoljan.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        // Web sučelje i na HTTPS-u: preglednik na HTTP-u piše "not secure".
+        // Televizor ostaje na HTTP-u — DLNA ne zna za TLS.
+        if let (Some(port), Some(cert), Some(key)) = (
+            self.state.config.server.https_port,
+            self.state.config.server.tls_cert.clone(),
+            self.state.config.server.tls_key.clone(),
+        ) {
+            let adresa = format!("{}:{}", self.state.config.server.bind, port);
+            match axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key).await {
+                Ok(tls) => match adresa.parse() {
+                    Ok(adresa) => {
+                        let app = crate::router(self.state.clone());
+                        tokio::spawn(async move {
+                            if let Err(greska) = axum_server::bind_rustls(adresa, tls)
+                                .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+                                .await
+                            {
+                                tracing::warn!(%greska, "HTTPS server je stao");
+                            }
+                        });
+                        tracing::info!(port, "web sučelje i na HTTPS-u");
+                    }
+                    Err(greska) => tracing::warn!(%greska, %adresa, "HTTPS adresa nije valjana"),
+                },
+                Err(greska) => tracing::warn!(
+                    %greska,
+                    %cert,
+                    "TLS certifikat se ne može pročitati — ostajem samo na HTTP-u"
+                ),
+            }
+        }
+
         let app = crate::router(self.state.clone());
         axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
             .with_graceful_shutdown(shutdown)
