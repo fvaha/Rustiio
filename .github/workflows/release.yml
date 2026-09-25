@@ -8,6 +8,12 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# `contents: write` je OBAVEZNO: bez njega tauri-action ne može stvoriti izdanje ni
+# priložiti pakete (zadane dozvole GITHUB_TOKEN-a su čitanje), a build padne tek na kraju
+# s "Resource not accessible by integration".
+permissions:
+  contents: write
+
 jobs:
   bundle:
     strategy:
@@ -17,17 +23,21 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             ffmpeg_url: https://evermeet.cx/ffmpeg/getrelease/zip
-            ffprobe_url: https://evermeet.cx/ffprobe/getrelease/zip
+            # `/ffprobe/getrelease/zip` vraća **ffmpeg** (provjereno md5-om) — pravi put je ovaj.
+            ffprobe_url: https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
           - os: macos-latest
             target: x86_64-apple-darwin
             ffmpeg_url: https://evermeet.cx/ffmpeg/getrelease/zip
-            ffprobe_url: https://evermeet.cx/ffprobe/getrelease/zip
+            ffprobe_url: https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             ffmpeg_url: https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+            # Isti tar sadrži i ffprobe (i ffmpeg); ffprobe_url NIJE smio ostati prazan.
+            ffprobe_url: https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             ffmpeg_url: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+            ffprobe_url: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -58,21 +68,41 @@ jobs:
             url="$1"; ime="$2"
             curl -L --fail --retry 3 -o pak "$url"
             case "$url" in
-              *.zip)   unzip -j -o pak >/dev/null ;;
+              # Pazi: evermeet put završava na `/zip`, ne na `.zip` — uzorak `*.zip` ga
+              # promaši, pa se tar prepoznaje po nastavku, a sve ostalo je zip.
               *.tar.xz) tar -xf pak --strip-components=1 --wildcards "*/$ime" ;;
+              *)        unzip -j -o pak >/dev/null ;;
             esac
             rm -f pak
           }
 
           preuzmi "${{ matrix.ffmpeg_url }}" ffmpeg
-          if [ "${{ matrix.ffprobe_url }}" != "" ]; then
-            preuzmi "${{ matrix.ffprobe_url }}" ffprobe
-          fi
+          preuzmi "${{ matrix.ffprobe_url }}" ffprobe
 
           case "${{ matrix.os }}" in windows-*) suf=".exe" ;; *) suf="" ;; esac
           mv "ffmpeg$suf" "ffmpeg-${{ matrix.target }}$suf"
           mv "ffprobe$suf" "ffprobe-${{ matrix.target }}$suf"
           chmod +x ffmpeg-* ffprobe-* 2>/dev/null || true
+
+          # Provjera da u paket ide stvarni binarij, a ne zip/HTML s pogrešnog linka:
+          # veličina > 1 MB i magic bajtovi (Mach-O, ELF, PE). Pokretanje `-version` je
+          # samo upozorenje jer cross-target binarij ne mora biti izvršiv na runneru.
+          for f in ffmpeg-* ffprobe-*; do
+            velicina=$(wc -c < "$f")
+            if [ "$velicina" -lt 1048576 ]; then
+              echo "GREŠKA: $f je premalen ($velicina B) — nije pravi binarij"; exit 1
+            fi
+            magic=$(od -An -tx1 -N4 "$f" | tr -d ' \n')
+            case "$magic" in
+              cffaedfe|cafebabe|7f454c46|4d5a*) ;;
+              *) echo "GREŠKA: $f nema magic binarija ($magic)"; exit 1 ;;
+            esac
+            if "./$f" -version >/dev/null 2>&1; then
+              echo "OK $f ($velicina B) — pokreće se"
+            else
+              echo "UPOZORENJE: $f ($velicina B) se ne pokreće na ovom runneru (cross-target)"
+            fi
+          done
           ls -la
 
       # `rustiio-server` is a path dependency of the desktop app and embeds `web/dist` at
@@ -89,6 +119,8 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # AppImage alat je i sam AppImage; bez ovoga zna tražiti FUSE na runneru.
+          APPIMAGE_EXTRACT_AND_RUN: 1
         with:
           projectPath: apps/rustiio-desktop
           # Sidecar se dodaje samo ovdje: lokalni `tauri build` tako radi i bez
