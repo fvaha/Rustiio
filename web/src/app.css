@@ -725,3 +725,16 @@ table.tbl td.n, table.tbl th.n { text-align: right; font-variant-numeric: tabula
 .roots-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
 
+
+/* Telefon: bento mreža mora u JEDAN stupac — inače se kartice gnječe jedna uz
+   drugu (Uređaji: 130 px po kartici) i sve izgleda nabacano. */
+@media (max-width: 700px) {
+  .bento,
+  .grid {
+    grid-template-columns: 1fr !important;
+  }
+  .bento > *,
+  .grid > * {
+    grid-column: 1 / -1 !important;
+  }
+}
