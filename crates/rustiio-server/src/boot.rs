@@ -212,7 +212,9 @@ pub async fn boot(config_path: PathBuf, options: BootOptions) -> anyhow::Result<
     let watcher = start_watch(&state, &config, options.watch);
 
     // SSDP: bez njega nas TV ne nalazi sam.
-    let deljeni_port = config.server.https_port.is_some() && options.port.is_none();
+    let deljeni_port = config.server.front_shared_port
+        && config.server.https_port.is_some()
+        && options.port.is_none();
     let listener = if deljeni_port {
         TcpListener::bind(("127.0.0.1", 0)).await.with_context(|| "bind na lokalni port")?
     } else {

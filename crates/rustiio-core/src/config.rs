@@ -137,6 +137,10 @@ pub struct ServerSection {
     pub log_level: String,
     /// HTTPS port za web sučelje (`None` = samo HTTP). Televizor ostaje na HTTP-u.
     pub https_port: Option<u16>,
+    /// Dijeljeni port (HTTP + HTTPS na istom portu, `front` sloj) — ISKLJUCENO po
+    /// defaultu: dodatni hop na portu streama je gušio DLNA reprodukciju (Nagle +
+    /// kopiranje u malim blokovima), pa se streaming drzi direktnim.
+    pub front_shared_port: bool,
     /// PEM certifikat i privatni ključ za HTTPS.
     pub tls_cert: Option<String>,
     pub tls_key: Option<String>,
@@ -148,6 +152,7 @@ impl Default for ServerSection {
             friendly_name: None,
             bind: "0.0.0.0".to_string(),
             http_port: DEFAULT_HTTP_PORT,
+            front_shared_port: false,
             https_port: None,
             tls_cert: None,
             tls_key: None,
