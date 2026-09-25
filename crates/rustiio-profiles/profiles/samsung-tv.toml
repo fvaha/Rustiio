@@ -24,7 +24,7 @@ mode = "soft"
 formats = ["srt", "vtt"]
 
 [transcode]
-container = "mkv"
+container = "mpegts"
 video_codec = "h264"
 audio_codec = "ac3"
 audio_channels = 2

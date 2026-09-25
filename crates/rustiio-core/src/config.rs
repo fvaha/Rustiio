@@ -249,6 +249,10 @@ pub struct TranscodeSection {
     /// Niti koje softverski enkoder smije koristiti (0 = sve jezgre).
     #[serde(default)]
     pub threads: u32,
+    /// Sto se smije transkodirati: `av` (slika i zvuk), `audio` (samo zvuk),
+    /// `video` (samo slika). Ostalo ide kao kopija iz originala.
+    #[serde(default = "default_what")]
+    pub what: String,
     /// Hardversko dekodiranje (GPU) — vrijedi i kad enkodira procesor.
     #[serde(default = "default_true")]
     pub hardware_decode: bool,
@@ -260,6 +264,10 @@ fn default_mode() -> String {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_what() -> String {
+    "av".to_string()
 }
 
 impl Default for TranscodeSection {
@@ -274,6 +282,7 @@ impl Default for TranscodeSection {
             probe_duration: true,
             encoder: String::new(),
             mode: default_mode(),
+            what: default_what(),
             threads: 0,
             hardware_decode: default_true(),
         }

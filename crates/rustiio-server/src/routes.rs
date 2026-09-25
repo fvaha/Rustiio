@@ -234,6 +234,7 @@ async fn content_directory_control(
                 state.sessions.hw(),
                 &state.media_probe,
                 state.config.transcode.enabled,
+                state.config.transcode.what.clone(),
             );
             let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone())
                 .with_catalog(state.catalog.clone())
@@ -291,6 +292,7 @@ async fn content_directory_control(
                 state.sessions.hw(),
                 &state.media_probe,
                 state.config.transcode.enabled,
+                state.config.transcode.what.clone(),
             );
             let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone())
                 .with_catalog(state.catalog.clone())
@@ -603,6 +605,7 @@ async fn serve_transcoded(
         state.sessions.hw(),
         &state.media_probe,
         state.config.transcode.enabled,
+                state.config.transcode.what.clone(),
     );
     match engine.decision(&node) {
         // Uredjaj moze original (ili ne znamo dovoljno) — saljemo fajl kakav jest.
@@ -1472,6 +1475,7 @@ async fn api_decision(
         state.sessions.hw(),
         &state.media_probe,
         state.config.transcode.enabled,
+                state.config.transcode.what.clone(),
     );
     let info = state.media_probe.get(&node.path);
     let summary = engine.decision_summary(&node);

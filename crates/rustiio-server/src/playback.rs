@@ -23,12 +23,13 @@ pub struct PlaybackEngine<'a> {
     hw: &'a HwSupport,
     media: &'a MediaProbe,
     enabled: bool,
+    what: String,
     decisions: Mutex<HashMap<PathBuf, Decision>>,
 }
 
 impl<'a> PlaybackEngine<'a> {
-    pub fn new(profile: &'a Profile, hw: &'a HwSupport, media: &'a MediaProbe, enabled: bool) -> Self {
-        Self { profile, hw, media, enabled, decisions: Mutex::new(HashMap::new()) }
+    pub fn new(profile: &'a Profile, hw: &'a HwSupport, media: &'a MediaProbe, enabled: bool, what: String) -> Self {
+        Self { profile, hw, media, enabled, what, decisions: Mutex::new(HashMap::new()) }
     }
 
     pub fn enabled(&self) -> bool {
@@ -76,13 +77,25 @@ impl<'a> PlaybackEngine<'a> {
         let info = self.media.get(&node.path)?;
         let extension =
             node.path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-        let decision = decide(
+        let mut decision = decide(
             &info,
             self.profile,
             &extension,
             node.subtitles.iter().any(|staza| staza.is_text()),
             self.hw,
         );
+        // `what` iz Settings: av = sve, audio = samo zvuk, video = samo slika.
+        match (self.what.as_str(), &mut decision.mode) {
+            ("audio", PlaybackMode::Transcode { video, audio }) => {
+                if *video && !*audio {
+                    decision.mode = PlaybackMode::Remux;
+                } else {
+                    *video = false;
+                }
+            }
+            ("video", PlaybackMode::Transcode { audio, .. }) => *audio = false,
+            _ => {}
+        }
 
         if let Ok(mut cache) = self.decisions.lock() {
             cache.insert(node.path.clone(), decision.clone());
@@ -189,7 +202,7 @@ mod tests {
         let media = MediaProbe::new("ffprobe", false);
         let profile = limited_profile();
         let hw = hw();
-        let engine = PlaybackEngine::new(&profile, &hw, &media, true);
+        let engine = PlaybackEngine::new(&profile, &hw, &media, true, "av".to_string());
         assert!(engine.resolve(&node("/media/film.mp4")).is_none(), "bez metapodataka = direct play");
     }
 
@@ -199,7 +212,7 @@ mod tests {
         media.remember(Path::new("/media/film.mp4"), Some(hevc_mp4()));
         let profile = limited_profile();
         let hw = hw();
-        let engine = PlaybackEngine::new(&profile, &hw, &media, true);
+        let engine = PlaybackEngine::new(&profile, &hw, &media, true, "av".to_string());
 
         let playback = engine.resolve(&node("/media/film.mp4")).expect("mora transcode");
         // Izlaz je MPEG-TS, pa i ime nosi `.ts` — Samsung gleda ekstenziju.
@@ -213,7 +226,7 @@ mod tests {
         media.remember(Path::new("/media/film.mp4"), Some(hevc_mp4()));
         let profile = limited_profile();
         let hw = hw();
-        let engine = PlaybackEngine::new(&profile, &hw, &media, false);
+        let engine = PlaybackEngine::new(&profile, &hw, &media, false, "av".to_string());
         assert!(engine.resolve(&node("/media/film.mp4")).is_none());
     }
     #[test]
