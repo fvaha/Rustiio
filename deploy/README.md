@@ -29,8 +29,8 @@ rustiio probe --wait 4        # s bilo kojeg računala u mreži
 cargo build --release
 sudo install -m 0755 target/release/rustiio /usr/local/bin/rustiio
 sudo install -m 0644 deploy/rustiio.service /etc/systemd/system/rustiio.service
-sudo mkdir -p /home/vaha/.config/rustiio
-cp deploy/config.example.toml /home/vaha/.config/rustiio/config.toml
+sudo mkdir -p ~/.config/rustiio
+cp deploy/config.example.toml ~/.config/rustiio/config.toml
 sudo systemctl daemon-reload
 sudo systemctl enable --now rustiio
 journalctl -u rustiio -f
@@ -53,7 +53,7 @@ dodatnim `*.toml` profilima. Profil s istim `id` pregazi ugrađeni. Reload bez r
 ```bash
 curl -X POST localhost:8200/api/profiles/reload
 curl -s localhost:8200/api/profiles | jq
-curl -s -H 'User-Agent: SEC_HHP_[TV]UE55MU6172/1.0' localhost:8200/api/decision/5 | jq
+curl -s -H 'User-Agent: SEC_HHP_[TV]Example/1.0' localhost:8200/api/decision/5 | jq
 ```
 
 Ako TV nije prepoznat, pusti ga da nas zamoli bilo što, pa pogledaj `/api/devices`

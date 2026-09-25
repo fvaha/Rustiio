@@ -5,9 +5,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=vaha
-Group=vaha
-# Config (i kasnije baza) žive u /var/lib/rustiio — systemd ga stvori i vlasništvo da vaha.
+# Korisnik/putanje postavlja `deploy/native/install.sh` (SERVICE_USER, PREFIX, STATE_DIR).
+# Vrijednosti niže su samo sigurni defaulti za ručnu instalaciju.
+User=rustiio
+Group=rustiio
+# Config (i kasnije baza) žive u /var/lib/rustiio — systemd ga stvori i vlasništvo prepusti korisniku.
 StateDirectory=rustiio
 Environment=RUSTIIO_CONFIG_DIR=/var/lib/rustiio
 Environment=RUST_LOG=info

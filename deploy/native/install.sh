@@ -3,7 +3,7 @@
 #
 #   sudo deploy/native/install.sh                     # build iz izvora + instaliraj
 #   sudo BIN=target/release/rustiio deploy/native/install.sh   # predgotov binarni fajl
-#   sudo MEDIA_ROOT=/home/vaha/multimedia deploy/native/install.sh
+#   sudo MEDIA_ROOT=/srv/media deploy/native/install.sh
 #
 # Sto napravi:
 #   1. build (osim ako je BIN zadan) — `cargo build --release`
