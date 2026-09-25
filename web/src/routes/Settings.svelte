@@ -4,6 +4,7 @@
   // Polja su opisana u lib/settings-schema.js — novo polje u configu se pojavi samo.
   import { onMount } from 'svelte'
   import { t, i18n } from '../lib/i18n.svelte.js'
+  import Icon from '../components/Icon.svelte'
   import { get, put, post } from '../lib/api.js'
   import { toast, refreshStatus } from '../lib/store.svelte.js'
   import { SECTIONS, fieldsOf, getPath, setPath, metaOf } from '../lib/settings-schema.js'
@@ -26,7 +27,7 @@
   $effect(() => sessionStorage.setItem('rustiio:settings-tab', tab))
 
   const hr = $derived(i18n.lang !== 'en')
-  const text = (item) => (item && typeof item === 'object' ? (item[t('field.en')] ?? item.hr ?? '') : (item ?? ''))
+  const text = (item) => (item && typeof item === 'object' ? (item[i18n.lang] ?? item.hr ?? '') : (item ?? ''))
 
   /// Sva polja koja se razlikuju od spremljenog stanja (ista logika kao na serveru).
   const changed = $derived.by(() => diff(original, config))
@@ -159,6 +160,7 @@
         aria-selected={tab === section.key}
         onclick={() => (tab = section.key)}
       >
+        <Icon name={section.key} />
         <span>{text(section.title)}</span>
         <span class="n">{counts[section.key] ?? 0}</span>
         {#if ceka[section.key]}<span class="dot" title={t('set.restart_pending')}></span>{/if}
@@ -172,6 +174,7 @@
       aria-selected={tab === 'napredno'}
       onclick={() => (tab = 'napredno')}
     >
+      <Icon name="code" />
       <span>{t('set.advanced')}</span>
       <span class="n">JSON</span>
     </button>
@@ -307,6 +310,12 @@
     background: color-mix(in srgb, #22c55e 16%, transparent);
     color: #4ade80;
     font-weight: 600;
+  }
+  .tab svg {
+    opacity: 0.75;
+  }
+  .tab.active svg {
+    opacity: 1;
   }
   .tab .n {
     font-size: 0.7rem;

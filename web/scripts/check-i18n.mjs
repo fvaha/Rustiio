@@ -33,7 +33,7 @@ function datoteke(dir, out = []) {
   return out
 }
 
-const ternar = /hr\s*\?\s*'|i18n\.lang\s*===\s*'en'\s*\?\s*'/
+const ternar = /hr\s*\?\s*'|i18n\.lang\s*===\s*'en'\s*\?\s*'|\blang\s*===\s*'en'\s*\?\s*'/
 let ternara = 0
 for (const path of datoteke(new URL('../src', import.meta.url).pathname)) {
   const linije = readFileSync(path, 'utf8').split('\n')
@@ -45,7 +45,48 @@ for (const path of datoteke(new URL('../src', import.meta.url).pathname)) {
   })
 }
 
-console.log(`ključeva: hr=${hrvatski.size} en=${engleski.size} | hardkodiranih ternara: ${ternara}`)
+// Svaki `t('ključ')` u kodu mora postojati u oba rječnika i vratiti tekst.
+// Dvije tihe greške koje ovo hvata: nepostojeći ključ (t() tada vrati sam tekst
+// ključa, npr. „field.en") i ključ koji je objekt (ispisuje se [object Object]).
+function nadji(obj, path) {
+  let vrijednost = obj
+  for (const dio of path.split('.')) {
+    if (vrijednost === undefined || vrijednost === null) return undefined
+    vrijednost = vrijednost[dio]
+  }
+  return vrijednost
+}
+
+function sviKodovi(dir, out = []) {
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry)
+    if (statSync(path).isDirectory()) sviKodovi(path, out)
+    else if (/\.(svelte|js)$/.test(entry) && !entry.endsWith('strings.js')) out.push(path)
+  }
+  return out
+}
+
+let poziva = 0
+for (const path of sviKodovi(new URL('../src', import.meta.url).pathname)) {
+  // Komentari se izbacuju: `t('x')` u komentaru je dokumentacija, ne poziv.
+  const izvor = readFileSync(path, 'utf8')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1')
+  const kratko = path.replace(/.*\/src\//, 'src/')
+  for (const [, kljuc] of izvor.matchAll(/\bt\(\s*'([^']+)'/g)) {
+    poziva += 1
+    const hrVrijednost = nadji(hr, kljuc)
+    const enVrijednost = nadji(en, kljuc)
+    if (hrVrijednost === undefined || enVrijednost === undefined) {
+      problem.push(`${kratko}: t('${kljuc}') ne postoji u rječniku (prikazuje se doslovno)`)
+    } else if (typeof hrVrijednost === 'object' || typeof enVrijednost === 'object') {
+      problem.push(`${kratko}: t('${kljuc}') je objekt, ne tekst (ispisuje se [object Object])`)
+    }
+  }
+}
+
+console.log(`ključeva: hr=${hrvatski.size} en=${engleski.size} | hardkodiranih ternara: ${ternara} | t() poziva provjereno: ${poziva}`)
 if (problem.length) {
   console.error('PROBLEMI:\n  ' + problem.join('\n  '))
   process.exit(1)

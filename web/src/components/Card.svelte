@@ -2,6 +2,7 @@
   // Bento kartica: povlačenje za redoslijed, povlačenje donjeg ruba za širinu,
   // skupljanje klikom. Sve tri stvari se pamte (vidi lib/layout.svelte.js).
   import { layout, move, setSpan, toggleCollapse, grid, effectiveSpan, stepUnits } from '../lib/layout.svelte.js'
+  import { t } from '../lib/i18n.svelte.js'
 
   let { id, title, span = 4, collapsed = false, children, actions } = $props()
 
@@ -81,7 +82,7 @@
     <span class="card-title">{title}</span>
     <span class="card-actions">
       {#if actions}{@render actions()}{/if}
-      <button class="btn ghost" title="Skupljeno / rašireno" onclick={() => toggleCollapse(id)}>
+      <button class="btn ghost" title={t('card.collapse')} onclick={() => toggleCollapse(id)}>
         {collapsed ? '▸' : '▾'}
       </button>
     </span>
@@ -91,9 +92,9 @@
     class="resize"
     role="separator"
     aria-orientation="horizontal"
-    aria-label="Širina kartice"
+    aria-label={t('card.width')}
     tabindex="0"
-    title="Povuci za širinu (ili strelice lijevo/desno)"
+    title={t('card.width_hint')}
     onpointerdown={startResize}
     onkeydown={(event) => {
       if (event.key === 'ArrowLeft') setSpan(id, span - 1)

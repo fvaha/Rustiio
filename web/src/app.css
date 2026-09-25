@@ -4,34 +4,36 @@
 :root {
   color-scheme: dark;
 
-  --bg: #08090c;
-  --surface: #0e1116;
-  --surface-2: #131822;
-  --surface-3: #1a2130;
-  --line: rgba(255, 255, 255, 0.07);
-  --line-2: rgba(255, 255, 255, 0.13);
-  --line-strong: rgba(255, 255, 255, 0.13);
+  /* Neutralna (zinc) paleta i mali radijusi — stil shadcn/ui. Zelena je
+     akcent (identitet), a ne boja svakog elementa. */
+  --bg: #09090b;
+  --surface: #0b0b0e;
+  --surface-2: #101013;
+  --surface-3: #18181b;
+  --line: #232327;
+  --line-2: #303036;
+  --line-strong: #3f3f46;
 
-  --text: #e8ebf0;
-  --dim: #9aa5b6;
-  --muted: #9aa5b6;
-  --faint: #6b7688;
+  --text: #fafafa;
+  --dim: #a1a1aa;
+  --muted: #a1a1aa;
+  --faint: #71717a;
 
-  --accent: #6ea8fe;
-  --accent-2: #3b82f6;
+  --accent: #22c55e;
+  --accent-2: #16a34a;
   --violet: #a78bfa;
   --teal: #2dd4bf;
   --ok: #34d399;
   --warn: #fbbf24;
   --err: #fb7185;
 
-  --radius: 14px;
-  --radius-sm: 10px;
-  --radius-xs: 8px;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 18px 40px -16px rgba(0, 0, 0, 0.75);
-  --ring: 0 0 0 3px rgba(110, 168, 254, 0.28);
+  --radius: 10px;
+  --radius-sm: 8px;
+  --radius-xs: 6px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 8px 24px -14px rgba(0, 0, 0, 0.7);
+  --ring: 0 0 0 2px rgba(250, 250, 250, 0.16);
 
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
@@ -152,10 +154,10 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.02em; font-weight: 620; }
 }
 .btn:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
 .btn.primary {
-  background: linear-gradient(180deg, var(--accent), var(--accent-2));
-  border-color: transparent; color: #05101f; font-weight: 620;
+  background: var(--accent);
+  border-color: transparent; color: #04140a; font-weight: 600;
 }
-.btn.primary:hover { filter: brightness(1.07); color: #05101f; }
+.btn.primary:hover { background: var(--accent-2); color: #04140a; }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--dim); padding: 5px 9px; }
 .btn.ghost:hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
 .btn.danger:hover { border-color: var(--err); color: var(--err); }
@@ -166,19 +168,19 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.02em; font-weight: 620; }
 
 .badge, .tag, .pill {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 3px 9px; border-radius: 999px;
+  padding: 2px 8px; border-radius: var(--radius-xs);
   font-size: 11.5px; font-weight: 500; white-space: nowrap;
   background: var(--surface-3); border: 1px solid var(--line-2); color: var(--dim);
 }
 .badge b, .pill b { color: var(--text); font-weight: 600; }
-.badge.ok, .tag.ok { color: var(--ok); border-color: rgba(52, 211, 153, 0.35); background: rgba(52, 211, 153, 0.08); }
+.badge.ok, .tag.ok { color: var(--ok); border-color: rgba(34, 197, 94, 0.35); background: rgba(34, 197, 94, 0.1); }
 .badge.warn, .tag.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.35); background: rgba(251, 191, 36, 0.08); }
 .badge.err, .tag.err { color: var(--err); border-color: rgba(251, 113, 133, 0.35); background: rgba(251, 113, 133, 0.08); }
-.badge.info, .tag.accent, .tag.info { color: var(--accent); border-color: rgba(110, 168, 254, 0.35); background: rgba(110, 168, 254, 0.09); }
+.badge.info, .tag.accent, .tag.info { color: var(--accent); border-color: rgba(34, 197, 94, 0.35); background: rgba(34, 197, 94, 0.1); }
 .badge.violet { color: var(--violet); border-color: rgba(167, 139, 250, 0.35); background: rgba(167, 139, 250, 0.09); }
 .badge .dot, .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); flex: 0 0 auto; }
-.dot.off { background: var(--err); box-shadow: 0 0 8px var(--err); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: 0 0 auto; }
+.dot.off { background: var(--err); }
 .dot.live { animation: pulse 2.4s infinite; }
 
 @keyframes pulse {
@@ -199,7 +201,7 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.02em; font-weight: 620; }
   grid-column: span var(--span, 4);
   min-width: 0; overflow: hidden;
   display: flex; flex-direction: column; height: 100%;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  background: var(--surface);
   border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow-1);
   transition: border-color 0.16s var(--ease), box-shadow 0.16s var(--ease);
@@ -213,8 +215,8 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.02em; font-weight: 620; }
 .card-head { display: flex; align-items: center; gap: 10px; padding: 13px 16px 0; cursor: grab; }
 .card-head:active { cursor: grabbing; }
 .card-title {
-  font-size: 11.5px; font-weight: 650; letter-spacing: 0.075em;
-  text-transform: uppercase; color: var(--faint);
+  font-size: 13px; font-weight: 500; letter-spacing: -0.01em;
+  color: var(--text);
 }
 .card-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 .card-body { padding: 12px 16px 16px; flex: 1 1 auto; min-height: 0; }
@@ -229,13 +231,11 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.02em; font-weight: 620; }
 .metrics, .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(102px, 1fr)); gap: 14px; }
 .metric, .kpi { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .metric b, .kpi b {
-  font-size: 28px; font-weight: 620; letter-spacing: -0.035em; line-height: 1.1;
-  font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 4px;
+  font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1;
+  color: var(--text); font-variant-numeric: tabular-nums;
 }
 .metric b .unit { font-size: 14px; font-weight: 500; color: var(--faint); letter-spacing: 0; }
 .metric > span, .kpi span { color: var(--dim); font-size: 12.5px; }
-.metric.violet b { color: var(--violet); }
-.metric.accent b { color: var(--accent); }
 .metric.ok b { color: var(--ok); }
 .metric.warn b { color: var(--warn); }
 .metric.err b { color: var(--err); }

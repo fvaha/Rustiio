@@ -3,10 +3,15 @@
   // Vrijednost se mijenja samo kroz onchange (roditelj drži config).
   import { t, i18n } from '../lib/i18n.svelte.js'
   import FolderPicker from './FolderPicker.svelte'
+  import Icon from './Icon.svelte'
 
   let { path, meta, value, changed = false, onchange } = $props()
 
-  const lang = $derived(t('field.en'))
+  // Jezik polja dolazi iz odabranog jezika sučelja. Prije je pisalo
+  // `t('field.en')`, a to nije ključ u rječniku pa `t()` vrati sam tekst
+  // „field.en" i `text()` uvijek padne na hrvatski — polja su ostajala
+  // hrvatska i kad je sučelje na engleskom.
+  const lang = $derived(i18n.lang)
   const text = (item) => (item && typeof item === 'object' ? (item[lang] ?? item.hr ?? '') : (item ?? ''))
   const type = $derived(meta.type)
   const label = $derived(text(meta.label))
@@ -114,7 +119,7 @@
   <div class="label">
     <span class="t">
       {label}
-      {#if changed}<span class="badge info" title="Promijenjeno, još nije spremljeno">•</span>{/if}
+      {#if changed}<span class="badge info" title={t('field.changed_unsaved')}>•</span>{/if}
     </span>
     <span class="h">{help}</span>
   </div>
@@ -130,7 +135,7 @@
           aria-label={label}
           onclick={() => onchange(!value)}
         ></button>
-        <span class="hint">{value === true ? (lang === 'en' ? 'on' : 'uključeno') : (lang === 'en' ? 'off' : 'isključeno')}</span>
+        <span class="hint">{value === true ? t('field.on') : t('field.off')}</span>
       </div>
 
     {:else if type === 'enum'}
@@ -166,13 +171,13 @@
         {#each Array.isArray(value) ? value : [] as tag}
           <span class="tag-item">
             {tag}
-            <button type="button" title={lang === 'en' ? 'Remove' : 'Ukloni'} onclick={() => removeTag(tag)}>×</button>
+            <button type="button" title={t('common.remove')} onclick={() => removeTag(tag)}>×</button>
           </span>
         {/each}
         <input
           class="input mono"
           style="width: 130px"
-          placeholder={lang === 'en' ? 'add…' : 'dodaj…'}
+          placeholder={t('field.tag_add')}
           bind:value={tagInput}
           onkeydown={(event) => {
             if (event.key === 'Enter' || event.key === ',') {
@@ -188,11 +193,11 @@
       <div class="roots">
         {#each Array.isArray(value) ? value : [] as root, index}
           <div class="root-row">
-            <input class="input" placeholder={lang === 'en' ? 'label' : 'naziv'} value={root.label ?? ''} onchange={(event) => setRoot(index, 'label', event.currentTarget.value)} />
+            <input class="input" placeholder={t('field.root_label')} value={root.label ?? ''} onchange={(event) => setRoot(index, 'label', event.currentTarget.value)} />
             <input
               class="input mono"
               class:bad={root.path && !isAbsolute(root.path)}
-              title={root.path && !isAbsolute(root.path) ? (lang === 'en' ? 'The path must start with "/"' : 'Putanja mora počinjati s „/"') : ''}
+              title={root.path && !isAbsolute(root.path) ? t('field.absolute_hint') : ''}
               placeholder="/putanja/do/mape"
               value={root.path ?? ''}
               onchange={(event) => setRoot(index, 'path', event.currentTarget.value)}
@@ -200,18 +205,18 @@
             <button
               class="btn"
               type="button"
-              title={lang === 'en' ? 'Browse folders on the server' : 'Pretraži mape na serveru'}
+              title={t('field.browse')}
               onclick={() => startPicking(index)}
-            >🗀 {lang === 'en' ? 'Browse' : 'Odaberi'}</button>
-            <button class="btn ghost danger" type="button" title={lang === 'en' ? 'Remove' : 'Ukloni mapu'} onclick={() => removeRoot(index)}>✕</button>
+            ><Icon name="folder" size={14} /> {t('field.choose')}</button>
+            <button class="btn ghost danger" type="button" title={t('field.remove_root')} onclick={() => removeRoot(index)}>✕</button>
           </div>
         {/each}
         <div class="roots-actions">
           <button class="btn primary sm" type="button" onclick={() => startPicking(-2)}>
-            + {lang === 'en' ? 'Add video folder' : 'Dodaj mapu s videom'}
+            + {t('field.add_folder')}
           </button>
-          <button class="btn ghost sm" type="button" title={lang === 'en' ? 'Add row manually' : 'Dodaj redak ručno'} onclick={addRoot}>
-            {lang === 'en' ? 'Type path manually' : 'Upiši putanju ručno'}
+          <button class="btn ghost sm" type="button" title={t('field.add_row')} onclick={addRoot}>
+            {t('field.type_path')}
           </button>
         </div>
       </div>

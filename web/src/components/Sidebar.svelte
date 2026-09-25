@@ -4,6 +4,7 @@
   import { store, rescan } from '../lib/store.svelte.js'
   import { uptime } from '../lib/format.js'
   import { TABS } from '../lib/nav.js'
+  import Icon from './Icon.svelte'
 
   let { tab, ontab, onlanguage } = $props()
 
@@ -14,7 +15,7 @@
   <div class="brand">
     <span class="logo"><img src="/icon-48.png" alt="Rustiio" /></span>
     <span>
-      <!-- Naziv proizvoda se ne prevodi; `t('app')` vraća cijeli rječnik pa je ispisivao [object Object]. -->
+      <!-- Naziv proizvoda se ne prevodi; ključ „app“ je rječnik, ne tekst, pa se ispisivalo [object Object]. -->
       <span class="name">Rustiio</span><br />
       <span class="ver">{store.status?.version ? `v${store.status.version}` : '—'}</span>
     </span>
@@ -23,7 +24,7 @@
   <nav class="nav">
     {#each TABS as item}
       <button class="nav-item" class:active={tab === item.id} onclick={() => ontab(item.id)}>
-        <span class="ico" aria-hidden="true">{item.icon}</span>
+        <span class="ico"><Icon name={item.id} /></span>
         {t(`nav.${item.id}`)}
       </button>
     {/each}
@@ -47,7 +48,7 @@
       <select
         class="select small"
         style="flex: 1"
-        aria-label="Jezik sučelja"
+        aria-label={t('common.language')}
         value={i18n.choice}
         onchange={(event) => {
           setLocale(event.currentTarget.value)
