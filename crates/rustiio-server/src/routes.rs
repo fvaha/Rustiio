@@ -55,6 +55,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/profiles/{id}/reset", post(api_profile_reset))
         .route("/api/profiles/{id}/delete", post(api_profile_delete))
         .route("/api/device-profile", put(api_device_profile))
+        // Ključ uređaja nosi „/“ i razmake (`ua:VLC/3.0.23 LibVLC/3.0.23`), pa ne
+        // može u putanju — ide u tijelu, kao i kod izbora profila.
+        .route("/api/device-delete", post(api_device_delete))
         .route("/api/profile/{key}", get(api_profile_for_device).post(crate::api::profiles::save))
         .route("/api/streams", get(api_streams))
         .route("/api/search", get(api_search))
@@ -1686,4 +1689,40 @@ mod tests {
         let response = eventing(state, gena::CONTENT_DIRECTORY, Method::POST, HeaderMap::new()).await;
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
+}
+
+/// Zaboravi uređaj: briše ga iz popisa (baza) i iz živog registra.
+async fn api_device_delete(
+    State(state): State<AppState>,
+    axum::Json(zahtjev): axum::Json<DeviceDeleteBody>,
+) -> Response {
+    let kljuc = zahtjev.key.trim();
+    if kljuc.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::Json(json!({"greska": "nedostaje ključ uređaja"})),
+        )
+            .into_response();
+    }
+    match rustiio_library::store::devices::delete(&state.store, kljuc) {
+        Ok(broj) => {
+            state.capture.forget(kljuc);
+            info!(key = %kljuc, obrisan = broj > 0, "uredjaj obrisan");
+            axum::Json(json!({"ok": true, "obrisan": broj > 0})).into_response()
+        }
+        Err(error) => {
+            warn!(error = %error, key = %kljuc, "uredjaj nije obrisan");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(json!({"greska": error.to_string()})),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Tijelo za brisanje uređaja (ključ može sadržavati „/“).
+#[derive(serde::Deserialize)]
+struct DeviceDeleteBody {
+    key: String,
 }

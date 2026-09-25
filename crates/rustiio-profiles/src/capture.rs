@@ -113,6 +113,15 @@ impl Capture {
         self.devices.lock().ok()?.get(key).cloned()
     }
 
+    /// Zaboravi uređaj u živom registru (korisnik ga je obrisao u sučelju).
+    pub fn forget(&self, key: &str) -> bool {
+        match self.devices.lock() {
+            Ok(mut uredjaji) => uredjaji.remove(key).is_some(),
+            // Otrovana brava: popis iz baze je ionako izvor istine.
+            Err(_) => false,
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.devices.lock().map(|devices| devices.len()).unwrap_or(0)
     }

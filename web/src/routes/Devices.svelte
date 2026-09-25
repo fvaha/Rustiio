@@ -100,6 +100,8 @@
   let pravila = $state(null)
   // Potvrda brisanja ide kroz mali dijalog — radi i na dodir i u desktop aplikaciji.
   let potvrda = $state(null)
+  // Isto, ali za uređaj iz popisa (ne za profil).
+  let potvrdaUredjaja = $state(null)
   const izabraniProfil = $derived(profiles.find((item) => item.id === editId) ?? null)
 
   function traziPotvrdu(profile) {
@@ -111,6 +113,29 @@
     const id = potvrda?.id
     potvrda = null
     if (id) await izbrisiProfil(id)
+  }
+
+  function traziPotvrduUredjaja(device) {
+    if (!device?.key) return
+    potvrdaUredjaja = { key: device.key, ime: label(device) }
+  }
+
+  async function potvrdiBrisanjeUredjaja() {
+    const key = potvrdaUredjaja?.key
+    potvrdaUredjaja = null
+    if (key) await izbrisiUredjaj(key)
+  }
+
+  /// Zaboravi uređaj: briše ga iz popisa (ako se javi opet, vratit će se sam).
+  async function izbrisiUredjaj(key) {
+    if (!key) return
+    try {
+      await post('/api/device-delete', { key })
+      toast('ok', t('devices.device_deleted'))
+      await refreshDevices()
+    } catch (error) {
+      toast('greska', `${t('devices.device_delete_failed')}: ${error.message ?? error}`)
+    }
   }
 
   /// Izbriši profil (datoteku) i vrati uređaje koji su ga koristili na automatski.
@@ -299,6 +324,14 @@
                     <button class="btn" onclick={() => saveProfile(device)} title={t('devices.make_profile_hint')}>
                       {t('devices.make_profile')}
                     </button>
+                    <button
+                      class="icon-btn danger"
+                      title={t('devices.delete_device')}
+                      aria-label={t('devices.delete_device')}
+                      onclick={() => traziPotvrduUredjaja(device)}
+                    >
+                      <Icon name="trash" size={14} />
+                    </button>
                   </td>
                 </tr>
                 {#if opened === device.key}
@@ -460,6 +493,22 @@
     </div>
   </div>
 </div>
+
+{#if potvrdaUredjaja}
+  <div class="modal">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-label={t('devices.delete_device')}>
+      <div class="modal-title">{t('devices.delete_device')}</div>
+      <div class="modal-text">{potvrdaUredjaja.ime}</div>
+      <div class="modal-note muted small">{t('devices.delete_device_hint')}</div>
+      <div class="akcije">
+        <button class="btn opasno" onclick={potvrdiBrisanjeUredjaja}>
+          <Icon name="trash" size={15} /> {t('devices.delete')}
+        </button>
+        <button class="btn ghost" onclick={() => (potvrdaUredjaja = null)}>{t('common.cancel')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if potvrda}
   <div class="modal">

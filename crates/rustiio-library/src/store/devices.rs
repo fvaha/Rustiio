@@ -83,6 +83,15 @@ pub fn clear_profile_choice(store: &Store, profile_id: &str) -> rusqlite::Result
     )
 }
 
+/// Obriši uređaj iz pamćenja.
+///
+/// Briše i njegov izbor profila (isti redak). Ako se uređaj ponovno javi, upisat
+/// će se iznova — ovo je popis, ne trajna zabrana.
+pub fn delete(store: &Store, key: &str) -> rusqlite::Result<usize> {
+    let conn = store.conn();
+    conn.execute("DELETE FROM devices WHERE key = ?1", params![key])
+}
+
 /// Izabrani profil za uređaj (None = automatski).
 pub fn profile_choice(store: &Store, key: &str) -> rusqlite::Result<Option<String>> {
     let conn = store.conn();
