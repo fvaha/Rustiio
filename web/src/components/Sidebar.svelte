@@ -25,14 +25,21 @@
       const podaci = await odgovor.json()
       const korijeni = (podaci.items ?? []).filter((s) => s.container).map((s) => s.id)
       let ukupno = 0
-      for (const id of korijeni) {
-        const r = await fetch('/api/metadata/refresh', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id }),
-        })
-        const o = await r.json()
-        ukupno += o?.found ?? 0
+      // Korijenska mapa sama ne prima osvjezavanje — idemo po njezinoj djeci
+      // (filmovi su stavke, serije su cvorovi koji onda prodju kroz svoje sezone).
+      for (const korijen of korijeni) {
+        const grana = await fetch(`/api/browse?id=${encodeURIComponent(korijen)}&limit=500`)
+        const djeca = await grana.json()
+        for (const dijete of djeca.items ?? []) {
+          const r = await fetch('/api/metadata/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: dijete.id }),
+          })
+          const o = await r.json()
+          ukupno += o?.found ?? 0
+          osvjezeno = ukupno
+        }
       }
       osvjezeno = ukupno
     } finally {
