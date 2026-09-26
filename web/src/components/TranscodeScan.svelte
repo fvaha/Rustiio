@@ -218,8 +218,8 @@
     font: inherit;
   }
   button.glavni {
-    background: #22c55e;
-    border-color: #22c55e;
+    background: #e5e5e5;
+    border-color: #e5e5e5;
     color: #05130a;
     font-weight: 600;
   }
@@ -290,7 +290,7 @@
   .traka i {
     display: block;
     height: 100%;
-    background: linear-gradient(90deg, #16a34a, #4ade80);
+    background: linear-gradient(90deg, #d4d4d8, #fafafa);
   }
   .nacin {
     display: flex;
@@ -310,11 +310,11 @@
     cursor: pointer;
   }
   .nacin label.odabran {
-    border-color: #22c55e;
-    color: #4ade80;
+    border-color: #e5e5e5;
+    color: #fafafa;
   }
   .nacin input {
-    accent-color: #22c55e;
+    accent-color: #e5e5e5;
   }
   .preporuka,
   .prazno {
@@ -324,6 +324,6 @@
     color: #f87171;
   }
   .uspjeh {
-    color: #4ade80;
+    color: #fafafa;
   }
 </style>

@@ -361,12 +361,12 @@
     cursor: pointer;
   }
   .tab:hover {
-    border-color: color-mix(in srgb, #22c55e 45%, var(--border, #262b35));
+    border-color: color-mix(in srgb, #e5e5e5 45%, var(--border, #262b35));
   }
   .tab.active {
-    border-color: #22c55e;
-    background: color-mix(in srgb, #22c55e 16%, transparent);
-    color: #4ade80;
+    border-color: #e5e5e5;
+    background: color-mix(in srgb, #e5e5e5 16%, transparent);
+    color: #fafafa;
     font-weight: 600;
   }
   .tab svg {
@@ -384,7 +384,7 @@
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--warn, #fbbf24);
+    background: var(--warn, #d4d4d8);
   }
   @media (max-width: 700px) {
     .tabs {
