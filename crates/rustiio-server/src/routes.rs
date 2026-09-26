@@ -1749,6 +1749,15 @@ async fn api_metadata_refresh(
     State(state): State<AppState>,
     axum::Json(tijelo): axum::Json<serde_json::Value>,
 ) -> Response {
+    // Posteri su se mozda promijenili — obrisi predmemorirane kolaze da se sloze nanovo.
+    if let Ok(ulaz) = std::fs::read_dir(state.enricher.art_dir()) {
+        for stavka in ulaz.flatten() {
+            if stavka.file_name().to_string_lossy().starts_with("kolaz-") {
+                let _ = std::fs::remove_file(stavka.path());
+            }
+        }
+    }
+
     let id = tijelo.get("id").and_then(|vrijednost| vrijednost.as_str()).unwrap_or("");
     if id.is_empty() {
         return (StatusCode::BAD_REQUEST, "treba id").into_response();
@@ -2147,7 +2156,8 @@ async fn api_collage(State(state): State<AppState>, Path(id): Path<String>) -> R
         _ => false,
     };
     if treba_nov && crate::art::napravi_kolaz(&posteri, &izlaz, 600).is_none() && !izlaz.is_file() {
-        return (StatusCode::NOT_FOUND, "nema postera za kolaz").into_response();
+        // Nema iz cega sloziti kolaz: umjesto greske vratimo ugradjenu zadanu sliku.
+        return axum::response::Redirect::temporary("/folder-tv.png").into_response();
     }
     match tokio::fs::read(&izlaz).await {
         Ok(bytes) => (
