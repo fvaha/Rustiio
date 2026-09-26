@@ -377,7 +377,7 @@
     height: 26px;
     padding: 0;
     line-height: 1;
-    border-radius: 999px;
+    border-radius: 8px;
     border: 1px solid var(--border);
     background: rgba(0, 0, 0, 0.55);
     color: var(--foreground);
@@ -410,7 +410,7 @@
     width: 26px;
     height: 26px;
     line-height: 1;
-    border-radius: 999px;
+    border-radius: 8px;
     border: 1px solid var(--border);
     background: rgba(0, 0, 0, 0.55);
     color: var(--foreground);
