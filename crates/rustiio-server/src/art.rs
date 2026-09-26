@@ -97,6 +97,13 @@ impl ArtLookup for StoreArt {
         if let Some(url) = self.mapa_slika(node) {
             return Some(url);
         }
+        // Nema vlastite slike: kolaz od postera sadrzaja (Nova Player stil).
+        if let Some(url) = self.kolaz_url(node, &catalog) {
+            return Some(url);
+        }
+        if let Some(url) = self.zadana_slika(node) {
+            return Some(url);
+        }
         let epizoda = self.poster_from_subtree(node, &catalog)?;
         Some(self.url_for(epizoda))
     }
@@ -178,23 +185,120 @@ impl StoreArt {
                 return Some(format!("/folderart/{}?v={v}", node.id));
             }
         }
-        if node.parent_id == "0" {
-            let naziv =
-                node.path.file_name().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-            if naziv.contains("film") || naziv.contains("movie") {
-                return Some("/folder-movies.png".to_string());
-            }
-            if naziv.contains("serij") || naziv.contains("tv") || naziv.contains("show") {
-                return Some("/folder-tv.png".to_string());
-            }
+        None
+    }
+
+    /// Ugradjena zadana slika za korijene bez ikakvog sadrzaja (prazni Filmovi/Serije).
+    fn zadana_slika(&self, node: &Node) -> Option<String> {
+        if !node.is_container() || node.parent_id != "0" {
+            return None;
+        }
+        let naziv =
+            node.path.file_name().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+        if naziv.contains("film") || naziv.contains("movie") {
+            return Some("/folder-movies.png".to_string());
+        }
+        if naziv.contains("serij") || naziv.contains("tv") || naziv.contains("show") {
+            return Some("/folder-tv.png".to_string());
         }
         None
+    }
+
+    /// Do cetiri postera iz podstabla (za kolaz) — isti izbor kao `poster_from_subtree`.
+    pub fn posteri_iz_podstabla(&self, node: &Node, catalog: &Catalog, koliko: usize) -> Vec<i64> {
+        let mut nadjeni: Vec<i64> = Vec::new();
+        self.skupi_postiere(node, catalog, koliko, 0, &mut nadjeni);
+        nadjeni
+    }
+
+    /// Skuplja postere u dubinu: filmovi su odmah u mapi, a serije idu
+    /// serija -> sezona -> epizoda (zato rekurzija, inace "Serije" ostane bez slike).
+    fn skupi_postiere(
+        &self,
+        node: &Node,
+        catalog: &Catalog,
+        koliko: usize,
+        dubina: u8,
+        nadjeni: &mut Vec<i64>,
+    ) {
+        if dubina > 3 || nadjeni.len() >= koliko {
+            return;
+        }
+        for child in node.children.iter().rev() {
+            if nadjeni.len() >= koliko {
+                return;
+            }
+            if let Ok(id) = child.parse::<i64>() {
+                if self.has_art(id) && !nadjeni.contains(&id) {
+                    nadjeni.push(id);
+                }
+                continue;
+            }
+            let Some(pod) = catalog.get(child) else {
+                continue;
+            };
+            if let Some(id) = self.poster_from_season(pod)
+                && !nadjeni.contains(&id)
+            {
+                nadjeni.push(id);
+            }
+            self.skupi_postiere(pod, catalog, koliko, dubina + 1, nadjeni);
+        }
+    }
+
+    /// Kolaz za mapu: `/collage/{id}` kad ima barem dva postera, inace sam poster.
+    fn kolaz_url(&self, node: &Node, catalog: &Catalog) -> Option<String> {
+        let posteri = self.posteri_iz_podstabla(node, catalog, 4);
+        match posteri.len() {
+            0 => None,
+            1 => Some(self.url_for(posteri[0])),
+            _ => Some(format!("/collage/{}", node.id)),
+        }
+    }
+
+    /// Gdje stoji (predmemorirani) kolaz za pojedinu mapu.
+    pub fn kolaz_putanja(&self, id: &str) -> Option<PathBuf> {
+        let sigurno: String = id
+            .chars()
+            .map(|z| if z.is_ascii_alphanumeric() || z == '-' || z == '_' { z } else { '_' })
+            .collect();
+        Some(self.art_dir.as_ref()?.join(format!("kolaz-{sigurno}.jpg")))
     }
 }
 
 /// Imena datoteka koje Rustiio prihvaca kao sliku mape.
 pub const IMENA_MAPNE_SLIKE: [&str; 7] =
     ["folder.jpg", "folder.jpeg", "folder.png", "poster.jpg", "cover.jpg", "thumb.jpg", "default.jpg"];
+
+/// Sastavi kolaz (2x2, 2x1 ili 1x1) od postera i spremi ga kao JPEG.
+pub fn napravi_kolaz(posteri: &[PathBuf], izlaz: &Path, velicina: u32) -> Option<()> {
+    use image::imageops::FilterType;
+    let koliko = posteri.len().min(4);
+    if koliko == 0 {
+        return None;
+    }
+    let (kolone, redova) = match koliko {
+        1 => (1u32, 1u32),
+        2 => (2, 1),
+        _ => (2, 2),
+    };
+    let sirina = velicina / kolone;
+    let visina = velicina / redova;
+    let mut platno = image::RgbImage::new(sirina * kolone, visina * redova);
+    for (i, putanja) in posteri.iter().take(koliko).enumerate() {
+        let Ok(slika) = image::open(putanja) else {
+            continue;
+        };
+        let slika = slika.resize_to_fill(sirina, visina, FilterType::Lanczos3).to_rgb8();
+        let x = (i as u32 % kolone) as i64 * sirina as i64;
+        let y = (i as u32 / kolone) as i64 * visina as i64;
+        image::imageops::overlay(&mut platno, &slika, x, y);
+    }
+    if let Some(roditelj) = izlaz.parent() {
+        let _ = std::fs::create_dir_all(roditelj);
+    }
+    platno.save(izlaz).ok()
+}
 
 #[cfg(test)]
 mod tests {

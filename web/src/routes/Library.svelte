@@ -15,6 +15,18 @@
   let loading = $state(false)
   let selected = $state(null)
 
+  /* Outline ikone (stroke, bez ispune) — u sucelju nema emojija. */
+  const IKONE = {
+    image:
+      '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-4.35-4.35a2 2 0 0 0-2.83 0L4 21"/>',
+    folder:
+      '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.5l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"/>',
+    film:
+      '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/>',
+    refresh:
+      '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>',
+  }
+
   async function load(id = cwd) {
     loading = true
     try {
@@ -172,6 +184,14 @@
   })
 </script>
 
+{#snippet ikona(ime, velicina = 16)}
+  <svg width={velicina} height={velicina} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    {@html IKONE[ime] ?? ''}
+  </svg>
+{/snippet}
+
+
 <div class="lib-bar">
   <input class="field" style="flex: 1 1 220px" placeholder={t('library.search_placeholder')} bind:value={query} oninput={onSearch} />
   <select class="field" bind:value={kind} onchange={() => load()}>
@@ -200,7 +220,7 @@
   <div class="posters">
     {#each items as item (item.id)}
       <!-- Jedna vrsta kartice za sve: serija ima poster kao i film — dosad je
-           serija (container) crtala samo 🗂, pa je poster iz API-ja propadao. -->
+           serija (container) crtala samo placeholder, pa je poster iz API-ja propadao. -->
       <div
         class="poster"
         class:open={item.container}
@@ -215,15 +235,21 @@
         }}
       >
         <button class="meta-refresh" title={t('library.refresh_meta_hint')}
-          onclick={(dogadjaj) => osvjeziMetapodatke(item, dogadjaj)}>⟳</button>
+          onclick={(dogadjaj) => osvjeziMetapodatke(item, dogadjaj)}>{@render ikona('refresh')}</button>
         {#if item.poster}
           <img class="img" src={item.poster} alt={item.title} loading="lazy" />
         {:else}
-          <div class="img none">{item.container ? '🗂' : '🎞'}</div>
+          <div class="img none">
+            {#if item.container}
+              {@render ikona('folder', 28)}
+            {:else}
+              {@render ikona('film', 28)}
+            {/if}
+          </div>
         {/if}
         {#if item.container}
           <label class="meta-refresh slika-mapa" title="Postavi sliku ove mape (folder.jpg)">
-            🖼
+            {@render ikona('image')}
             <input type="file" accept="image/*"
               onchange={(dogadjaj) => postaviSlikuMape(item, dogadjaj)} />
           </label>
@@ -330,7 +356,7 @@
   :global(.poster) {
     position: relative;
   }
-  /* Gumb za sliku mape: gore lijevo, da ne smeta ⟳ gore desno. */
+  /* Gumb za sliku mape: gore lijevo, da ne smeta gumbu za osvjezavanje gore desno. */
   .slika-mapa {
     left: 8px;
     right: auto;

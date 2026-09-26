@@ -49,7 +49,9 @@
     </div>
     <div class="row tight">
       <button class="restart-btn" title="Restartuj Rustiio servis (stvarno)" onclick={restartujServis}>
-        ⟳ Restart servisa
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+        ><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5" /></svg> Restart servisa
       </button>
     </div>
     <div class="row tight">
@@ -76,10 +78,14 @@
           <option value={language.id}>{language.label()}</option>
         {/each}
       </select>
-      <button class="btn ghost" title={t('common.scan_hint')} onclick={rescan}>⟳</button>
+      <button class="btn ghost" title={t('common.scan_hint')} onclick={rescan}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+        ><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5" /></svg></button>
     </div>
     <button class="btn scan" title={t('common.scan_hint')} onclick={rescan}>
-      ⟳ {t('common.scan')}
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+        ><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5" /></svg> {t('common.scan')}
     </button>
     <button class="btn ghost" style="width: 100%; margin-top: 6px" title={t('common.restart_hint')}
       onclick={restartServer}>

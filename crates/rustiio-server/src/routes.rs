@@ -66,6 +66,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/decision/{id}", get(api_decision))
         .route("/art/{id}", get(api_art))
         .route("/folderart/{id}", get(api_folder_art))
+        .route("/collage/{id}", get(api_collage))
         .route("/api/folderart/{id}", post(api_folder_art_post))
         .route("/api/posters", get(api_posters))
         .route("/api/posters/refresh", post(api_posters_refresh))
@@ -2111,5 +2112,52 @@ async fn api_folder_art_post(
         Err(greska) => {
             (StatusCode::INTERNAL_SERVER_ERROR, format!("ne mogu spremiti sliku: {greska}")).into_response()
         }
+    }
+}
+
+/// `/collage/{id}` — kolaz (2x2) od postera onoga sto je u mapi. Pravi se prvi put
+/// kad ga netko zatrzi, a obnavlja se kad se pojavi noviji poster od postojeceg kolaza.
+async fn api_collage(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    let art = crate::art::StoreArt::new(state.store.clone(), state.base_url.clone())
+        .with_art_dir(state.enricher.art_dir().to_path_buf())
+        .with_catalog(state.catalog.clone());
+    let (izlaz, posteri) = {
+        let katalog = state.catalog.read().await;
+        let Some(cvor) = katalog.get(&id) else {
+            return (StatusCode::NOT_FOUND, "nema takve mape").into_response();
+        };
+        let Some(izlaz) = art.kolaz_putanja(&id) else {
+            return (StatusCode::NOT_FOUND, "nema predmemorije za slike").into_response();
+        };
+        let posteri: Vec<std::path::PathBuf> = art
+            .posteri_iz_podstabla(cvor, &katalog, 4)
+            .into_iter()
+            .filter_map(|poster| {
+                crate::art::serve(state.store.as_ref(), state.enricher.art_dir(), poster)
+                    .map(|(putanja, _)| putanja)
+            })
+            .collect();
+        (izlaz, posteri)
+    };
+    let najnoviji = posteri.iter().filter_map(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok()).max();
+    let kolaz_vrijeme = std::fs::metadata(&izlaz).and_then(|m| m.modified()).ok();
+    let treba_nov = match (kolaz_vrijeme, najnoviji) {
+        (None, _) => true,
+        (Some(kolaz), Some(poster)) => poster > kolaz,
+        _ => false,
+    };
+    if treba_nov && crate::art::napravi_kolaz(&posteri, &izlaz, 600).is_none() && !izlaz.is_file() {
+        return (StatusCode::NOT_FOUND, "nema postera za kolaz").into_response();
+    }
+    match tokio::fs::read(&izlaz).await {
+        Ok(bytes) => (
+            [
+                (header::CONTENT_TYPE, "image/jpeg".to_string()),
+                (header::CACHE_CONTROL, "public, max-age=600".to_string()),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Err(greska) => (StatusCode::INTERNAL_SERVER_ERROR, greska.to_string()).into_response(),
     }
 }
