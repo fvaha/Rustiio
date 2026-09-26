@@ -13,6 +13,33 @@
   }
   // Lijevi stupac: znak, navigacija i stanje servera u podnožju.
   import { t, i18n, setLocale, languages } from '../lib/i18n.svelte.js'
+  let osvjezavam = $state(false)
+  let osvjezeno = $state(0)
+
+  /* Osvjezi postere/metapodatke za cijelu knjiznicu: korijenske mape
+     (Filmovi, Serije) same prolaze kroz svoje podstablo. */
+  async function osvjeziSlike() {
+    osvjezavam = true
+    try {
+      const odgovor = await fetch('/api/browse?id=0&limit=50')
+      const podaci = await odgovor.json()
+      const korijeni = (podaci.items ?? []).filter((s) => s.container).map((s) => s.id)
+      let ukupno = 0
+      for (const id of korijeni) {
+        const r = await fetch('/api/metadata/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        })
+        const o = await r.json()
+        ukupno += o?.found ?? 0
+      }
+      osvjezeno = ukupno
+    } finally {
+      osvjezavam = false
+    }
+  }
+
   import { store, rescan, restartServer } from '../lib/store.svelte.js'
   import { uptime } from '../lib/format.js'
   import { TABS } from '../lib/nav.js'
@@ -72,6 +99,13 @@
         {/each}
       </select>
     </div>
+    <button class="btn ghost" style="width: 100%; margin-top: 6px"
+      title={t('common.refresh_images_hint')} onclick={osvjeziSlike} disabled={osvjezavam}>
+      <Icon name="image" size={14} /> {osvjezavam ? t('common.refresh_images_working') : t('common.refresh_images')}
+    </button>
+    {#if osvjezeno > 0}
+      <div class="tiny faint" style="margin-top: 4px">{t('common.refresh_images_done')}: {osvjezeno}</div>
+    {/if}
     <button class="btn scan" title={t('common.scan_hint')} onclick={rescan}>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
         stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
