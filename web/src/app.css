@@ -850,12 +850,12 @@ table.tbl td.n, table.tbl th.n { text-align: right; font-variant-numeric: tabula
 }
 
 /* ── Sidebar u shadcn stilu ────────────────────────────────────────────────
-   Svi gumbi i polja u sidebaru imaju istu visinu, isti radijus i isti rub;
-   hover je neutralan (nikad akcentna boja), da se sve uklopi u monokrom. */
+   SVA dugmad i polja u sidebaru izgledaju isto: ista visina (38px), isti
+   radijus (8px), isti rub, isti hover — bez "golih" varijanti koje štrče. */
 .side .btn,
-aside .btn,
 .side-foot .btn,
-.side-foot button {
+.side-foot button,
+aside .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -865,31 +865,38 @@ aside .btn,
   padding: 0 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
-  background: transparent;
+  background: rgba(255, 255, 255, 0.02);
   color: var(--text);
+  font-size: 13.5px;
   font-weight: 500;
+  line-height: 1;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 .side .btn:hover,
-aside .btn:hover,
 .side-foot .btn:hover,
-.side-foot button:hover {
-  background: rgba(255, 255, 255, 0.05);
+.side-foot button:hover,
+aside .btn:hover {
+  background: rgba(255, 255, 255, 0.06);
   border-color: var(--line-strong);
   color: var(--text);
 }
+.side .btn:active,
+.side-foot button:active {
+  background: rgba(255, 255, 255, 0.09);
+}
+/* U sidebaru nema "ghost" izuzetaka — i oni dobivaju rub kao ostali. */
 .side .btn.ghost,
 .side-foot .btn.ghost,
 .side-foot button.ghost {
-  border-color: transparent;
-  color: var(--muted);
-}
-.side .btn.ghost:hover,
-.side-foot .btn.ghost:hover,
-.side-foot button.ghost:hover {
   border-color: var(--line);
-  background: rgba(255, 255, 255, 0.05);
   color: var(--text);
+  background: rgba(255, 255, 255, 0.02);
+}
+.side .btn svg,
+.side-foot .btn svg,
+aside .btn svg {
+  flex: 0 0 auto;
+  opacity: 0.85;
 }
 .side select,
 .side-foot select {
@@ -898,10 +905,10 @@ aside .btn:hover,
   padding: 0 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
-  background: transparent;
+  background: rgba(255, 255, 255, 0.02);
   color: var(--text);
+  font-size: 13.5px;
 }
-.side-foot > * + *,
-.side .foot > * + * {
+.side-foot > * + * {
   margin-top: 8px;
 }
