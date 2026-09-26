@@ -75,6 +75,7 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::api::logs::routes())
         .merge(crate::api::settings::routes())
         .merge(crate::api::transcode::routes())
+        .merge(crate::api::prepare::routes())
         .merge(crate::assets::routes())
         .with_state(state)
         .layer(TraceLayer::new_for_http())
@@ -1174,6 +1175,7 @@ async fn api_profiles(State(state): State<AppState>) -> Response {
                     "max_bitrate_kbps": profile.transcode.max_bitrate_kbps,
                     "max_height": profile.transcode.max_height,
                     "allow_remux": profile.transcode.allow_remux,
+                    "enabled": profile.transcode.enabled,
                 },
                 "dlna": {
                     "op": profile.dlna.op,

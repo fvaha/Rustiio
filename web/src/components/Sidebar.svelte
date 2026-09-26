@@ -1,4 +1,16 @@
 <script>
+  let restartujem = $state(false)
+  async function restartujServis() {
+    restartujem = true
+    try {
+      await fetch('/api/restart', { method: 'POST' })
+      // servis se dize ~5 s; pricekaj pa osvjezi stranicu
+      setTimeout(() => location.reload(), 7000)
+    } catch (greska) {
+      restartujem = false
+      alert('Restart nije uspio: ' + greska.message)
+    }
+  }
   // Lijevi stupac: znak, navigacija i stanje servera u podnožju.
   import { t, i18n, setLocale, languages } from '../lib/i18n.svelte.js'
   import { store, rescan, restartServer } from '../lib/store.svelte.js'
@@ -34,6 +46,11 @@
     <div class="row tight">
       <span class="dot" class:off={!online} class:live={online}></span>
       <span class="grow small dim">{online ? (t('side.live_log_connected')) : (t('side.log_disconnected'))}</span>
+    </div>
+    <div class="row tight">
+      <button class="restart-btn" title="Restartuj Rustiio servis (stvarno)" onclick={restartujServis}>
+        ⟳ Restart servisa
+      </button>
     </div>
     <div class="row tight">
       <span class="small dim">{t('common.uptime')}</span>

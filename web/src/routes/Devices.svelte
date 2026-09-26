@@ -186,6 +186,7 @@
       target_channels: profil.target?.audio_channels ?? 2,
       target_height: profil.target?.max_height ?? '',
       target_remux: profil.target?.allow_remux ?? true,
+      transcode_on: profil.target?.enabled ?? true,
       ime: profil.name ?? '',
       sub_mode: profil.subtitles?.mode ?? 'soft',
       sub_formats: (profil.subtitles?.formats ?? []).join(', '),
@@ -233,6 +234,7 @@
           max_bitrate_kbps: Number(pravila.target_bitrate) || 0,
           max_height: Number(pravila.target_height) || null,
           allow_remux: !!pravila.target_remux,
+          enabled: !!pravila.transcode_on,
         },
         dlna: {
           op: pravila.dlna_op,
@@ -533,6 +535,10 @@
             <input class="input num" type="number" placeholder="720" bind:value={pravila.target_height} />
           </label>
           <label class="polje">
+            <span>'Transcode (pretvaranje u hodu)'</span>
+            <input type="checkbox" bind:checked={pravila.transcode_on} />
+          </label>
+            <label class="polje">
             <span>{t('devices.target_remux')}</span>
             <input type="checkbox" bind:checked={pravila.target_remux} />
           </label>

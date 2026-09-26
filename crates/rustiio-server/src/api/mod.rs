@@ -5,11 +5,13 @@
 //! - [`settings`]: čitanje i pisanje configa iz browsera
 //! - [`fs`]: preglednik mapa (biranje mape s videom bez tipkanja putanje)
 //! - [`transcode`]: sken sustava (ffmpeg/CPU/GPU) i automatsko podešavanje transcodea
+//! - [`prepare`]: priprema videa (DD+/eac3 -> AC-3) uz original, za uredjaje koji to traze
 
 pub mod browse;
 pub mod fs;
 pub mod hardware;
 pub mod logs;
+pub mod prepare;
 pub mod profiles;
 pub mod settings;
 pub mod stats;
