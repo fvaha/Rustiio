@@ -207,7 +207,29 @@ impl StoreArt {
     /// Do cetiri postera iz podstabla (za kolaz) — isti izbor kao `poster_from_subtree`.
     pub fn posteri_iz_podstabla(&self, node: &Node, catalog: &Catalog, koliko: usize) -> Vec<i64> {
         let mut nadjeni: Vec<i64> = Vec::new();
-        self.skupi_postiere(node, catalog, koliko, 0, &mut nadjeni);
+        // Filmovi su svaki za sebe, a svaka serija (sezona) daje TOCNO JEDAN poster —
+        // inace bi kolaz za "Serije" bio cetiri epizode iste serije.
+        for child in node.children.iter().rev() {
+            if nadjeni.len() >= koliko {
+                break;
+            }
+            if let Ok(id) = child.parse::<i64>() {
+                if self.has_art(id) && !nadjeni.contains(&id) {
+                    nadjeni.push(id);
+                }
+                continue;
+            }
+            let Some(pod) = catalog.get(child) else {
+                continue;
+            };
+            let mut iz_serije: Vec<i64> = Vec::new();
+            self.skupi_postiere(pod, catalog, 1, 0, &mut iz_serije);
+            if let Some(id) = iz_serije.first()
+                && !nadjeni.contains(id)
+            {
+                nadjeni.push(*id);
+            }
+        }
         nadjeni
     }
 
