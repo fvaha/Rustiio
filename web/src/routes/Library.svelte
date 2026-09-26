@@ -76,6 +76,12 @@
     }
   }
 
+  /* Otvori birac datoteka iz skrivenog inputa pokraj gumba. */
+  function odaberiSliku(dogadjaj) {
+    const ulaz = dogadjaj.currentTarget.parentElement?.querySelector('input[type=file]')
+    ulaz?.click()
+  }
+
   /* Slika mape: korisnik odabere slici i ona se sprema kao `folder.jpg` u mapu.
      Vraca se kroz /folderart/{id} i odmah se vidi i u DLNA-u (TV/VLC). */
   async function postaviSlikuMape(item, dogadjaj) {
@@ -248,11 +254,12 @@
           </div>
         {/if}
         {#if item.container}
-          <label class="meta-refresh slika-mapa" title="Postavi sliku ove mape (folder.jpg)">
+          <button class="slika-mapa" title="Postavi sliku mape"
+            onclick={(dogadjaj) => odaberiSliku(dogadjaj)}>
             {@render ikona('image')}
-            <input type="file" accept="image/*"
-              onchange={(dogadjaj) => postaviSlikuMape(item, dogadjaj)} />
-          </label>
+          </button>
+          <input class="slika-ulaz" type="file" accept="image/*"
+            onchange={(dogadjaj) => postaviSlikuMape(item, dogadjaj)} />
         {/if}
         <div class="cap">
           <div class="name" title={item.title}>{item.title}</div>
@@ -356,13 +363,43 @@
   :global(.poster) {
     position: relative;
   }
-  /* Gumb za sliku mape: gore lijevo, da ne smeta gumbu za osvjezavanje gore desno. */
+  /* Gumb za sliku mape: tamna prozirna plocica, bez zelenog kruga —
+     isti jezik kao gumb za osvjezavanje, samo s druge strane kartice. */
   .slika-mapa {
+    position: absolute;
+    top: 8px;
     left: 8px;
-    right: auto;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(12, 14, 16, 0.62);
+    color: rgba(255, 255, 255, 0.9);
     cursor: pointer;
+    backdrop-filter: blur(3px);
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
   }
-  .slika-mapa input {
+  .slika-mapa:hover {
+    background: rgba(12, 14, 16, 0.85);
+    border-color: rgba(255, 255, 255, 0.4);
+    transform: scale(1.06);
+  }
+  .slika-mapa:active {
+    transform: scale(0.97);
+  }
+  .slika-mapa svg {
+    display: block;
+  }
+  .slika-mapa {
+    padding: 0;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  .slika-ulaz {
     display: none;
   }
 
