@@ -270,6 +270,11 @@ impl StoreArt {
 
     /// Kolaz za mapu: `/collage/{id}` kad ima barem dva postera, inace sam poster.
     fn kolaz_url(&self, node: &Node, catalog: &Catalog) -> Option<String> {
+        // Kolaz dobivaju samo korijeni (Filmovi, Serije) — serija i sezona i dalje
+        // pokazuju svoj poster, a mapa s djecom svoj jedan poster.
+        if node.parent_id != "0" {
+            return None;
+        }
         let posteri = self.posteri_iz_podstabla(node, catalog, 4);
         match posteri.len() {
             0 => None,
@@ -307,7 +312,9 @@ pub fn napravi_kolaz(posteri: &[PathBuf], izlaz: &Path, velicina: u32) -> Option
     let sirina = velicina / kolone;
     let visina = velicina / redova;
     let mut platno = image::RgbImage::new(sirina * kolone, visina * redova);
-    for (i, putanja) in posteri.iter().take(koliko).enumerate() {
+    // Ako postera ima manje od mjesta u mrezi, ponavljamo ih da ne ostane crna polja.
+    let mjesta = (kolone * redova) as usize;
+    for (i, putanja) in (0..mjesta).map(|i| (i, &posteri[i % koliko])) {
         let Ok(slika) = image::open(putanja) else {
             continue;
         };
