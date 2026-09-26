@@ -66,6 +66,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/decision/{id}", get(api_decision))
         .route("/art/{id}", get(api_art))
         .route("/folderart/{id}", get(api_folder_art))
+        .route("/api/folderart/{id}", post(api_folder_art_post))
         .route("/api/posters", get(api_posters))
         .route("/api/posters/refresh", post(api_posters_refresh))
         .route("/api/metadata/refresh", post(api_metadata_refresh))
@@ -2065,4 +2066,50 @@ async fn api_folder_art(State(state): State<AppState>, Path(id): Path<String>) -
         };
     }
     (StatusCode::NOT_FOUND, "mapa nema svoju sliku").into_response()
+}
+
+/// `POST /api/folderart/{id}` — sprema sliku koju je korisnik poslao kao `folder.jpg`
+/// (ili `folder.png`) u mapu. Zovemo ga iz web sucelja, gumbom "Postavi sliku".
+async fn api_folder_art_post(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: axum::http::HeaderMap,
+    telo: axum::body::Bytes,
+) -> Response {
+    if telo.is_empty() {
+        return (StatusCode::BAD_REQUEST, "prazna slika").into_response();
+    }
+    if telo.len() > 8 * 1024 * 1024 {
+        return (StatusCode::PAYLOAD_TOO_LARGE, "slika je veca od 8 MB").into_response();
+    }
+    let mapa = {
+        let katalog = state.catalog.read().await;
+        katalog.get(&id).map(|cvor| cvor.path.clone())
+    };
+    let Some(mapa) = mapa else {
+        return (StatusCode::NOT_FOUND, "nema takve mape").into_response();
+    };
+    let tip = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let ime = if tip.contains("png") { "folder.png" } else { "folder.jpg" };
+    // Uklonimo samo PRETHODNO poslanu sliku (drugog formata); tudje slike ne diramo.
+    for staro in ["folder.jpg", "folder.png"] {
+        if staro != ime {
+            let putanja = mapa.join(staro);
+            if putanja.is_file() {
+                let _ = tokio::fs::remove_file(&putanja).await;
+            }
+        }
+    }
+    match tokio::fs::write(mapa.join(ime), &telo).await {
+        Ok(()) => axum::Json(json!({
+            "ok": true,
+            "mapa": mapa.to_string_lossy(),
+            "datoteka": ime,
+            "bajtova": telo.len(),
+        }))
+        .into_response(),
+        Err(greska) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("ne mogu spremiti sliku: {greska}")).into_response()
+        }
+    }
 }

@@ -64,6 +64,27 @@
     }
   }
 
+  /* Slika mape: korisnik odabere slici i ona se sprema kao `folder.jpg` u mapu.
+     Vraca se kroz /folderart/{id} i odmah se vidi i u DLNA-u (TV/VLC). */
+  async function postaviSlikuMape(item, dogadjaj) {
+    const datoteka = dogadjaj.currentTarget.files?.[0]
+    if (!datoteka) return
+    try {
+      const odgovor = await fetch(`/api/folderart/${encodeURIComponent(item.id)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': datoteka.type || 'image/jpeg' },
+        body: datoteka,
+      })
+      if (!odgovor.ok) throw new Error(await odgovor.text())
+      toast('ok', `Slika mape postavljena: ${item.title}`)
+      await load()
+    } catch (greska) {
+      toast('greska', `Slika mape: ${greska.message}`)
+    } finally {
+      dogadjaj.currentTarget.value = ''
+    }
+  }
+
   async function copyLink(item) {
     const url = `${location.origin}${item.play ?? `/art/${item.id}`}`
     try {
@@ -200,6 +221,13 @@
         {:else}
           <div class="img none">{item.container ? '🗂' : '🎞'}</div>
         {/if}
+        {#if item.container}
+          <label class="meta-refresh slika-mapa" title="Postavi sliku ove mape (folder.jpg)">
+            🖼
+            <input type="file" accept="image/*"
+              onchange={(dogadjaj) => postaviSlikuMape(item, dogadjaj)} />
+          </label>
+        {/if}
         <div class="cap">
           <div class="name" title={item.title}>{item.title}</div>
           <div class="sub">
@@ -302,6 +330,16 @@
   :global(.poster) {
     position: relative;
   }
+  /* Gumb za sliku mape: gore lijevo, da ne smeta ⟳ gore desno. */
+  .slika-mapa {
+    left: 8px;
+    right: auto;
+    cursor: pointer;
+  }
+  .slika-mapa input {
+    display: none;
+  }
+
   .meta-refresh {
     position: absolute;
     top: 6px;
