@@ -849,13 +849,12 @@ table.tbl td.n, table.tbl th.n { text-align: right; font-variant-numeric: tabula
   border-color: var(--accent);
 }
 
-/* ── Sidebar u shadcn stilu ────────────────────────────────────────────────
-   SVA dugmad i polja u sidebaru izgledaju isto: ista visina (38px), isti
-   radijus (8px), isti rub, isti hover — bez "golih" varijanti koje štrče. */
-.side .btn,
-.side-foot .btn,
-.side-foot button,
-aside .btn {
+/* ── Sidebar u shadcn stilu: SVA dugmad bez izuzetka ─────────────────────
+   Selektori namjerno hvataju svaki oblik sidebara (aside, .side*, *foot*),
+   da pravilo ne ovisi o jednom imenu klase koje se moze promijeniti. */
+aside .btn, aside button, aside select,
+[class*="side"] .btn, [class*="side"] button, [class*="side"] select,
+[class*="foot"] .btn, [class*="foot"] button, [class*="foot"] select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -872,43 +871,25 @@ aside .btn {
   line-height: 1;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
-.side .btn:hover,
-.side-foot .btn:hover,
-.side-foot button:hover,
-aside .btn:hover {
+aside .btn:hover, aside button:hover, aside select:hover,
+[class*="side"] .btn:hover, [class*="side"] button:hover,
+[class*="foot"] .btn:hover, [class*="foot"] button:hover {
   background: rgba(255, 255, 255, 0.06);
   border-color: var(--line-strong);
   color: var(--text);
 }
-.side .btn:active,
-.side-foot button:active {
+aside .btn:active, aside button:active,
+[class*="side"] button:active, [class*="foot"] button:active {
   background: rgba(255, 255, 255, 0.09);
 }
-/* U sidebaru nema "ghost" izuzetaka — i oni dobivaju rub kao ostali. */
-.side .btn.ghost,
-.side-foot .btn.ghost,
-.side-foot button.ghost {
+/* Bez "ghost" izuzetaka u sidebaru — svi imaju isti rub i podlogu. */
+aside .btn.ghost, [class*="side"] .btn.ghost, [class*="foot"] .btn.ghost,
+aside button.ghost, [class*="side"] button.ghost, [class*="foot"] button.ghost {
   border-color: var(--line);
-  color: var(--text);
   background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
 }
-.side .btn svg,
-.side-foot .btn svg,
-aside .btn svg {
+aside .btn svg, [class*="side"] .btn svg, [class*="foot"] .btn svg {
   flex: 0 0 auto;
   opacity: 0.85;
-}
-.side select,
-.side-foot select {
-  width: 100%;
-  min-height: 38px;
-  padding: 0 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.02);
-  color: var(--text);
-  font-size: 13.5px;
-}
-.side-foot > * + * {
-  margin-top: 8px;
 }
