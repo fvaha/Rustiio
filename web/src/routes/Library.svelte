@@ -241,8 +241,12 @@
           }
         }}
       >
-        <button class="meta-refresh" title={t('library.refresh_meta_hint')}
-          onclick={(dogadjaj) => osvjeziMetapodatke(item, dogadjaj)}>{@render ikona('refresh')}</button>
+        <!-- Osvjezavanje metapodataka nema smisla na korijenskim mapama
+             (Filmovi/Serije) — tamo je samo pregled; unutra radi kroz cijelo podstablo. -->
+        {#if !(item.container && cwd === '0')}
+          <button class="meta-refresh" title={t('library.refresh_meta_hint')}
+            onclick={(dogadjaj) => osvjeziMetapodatke(item, dogadjaj)}>{@render ikona('refresh')}</button>
+        {/if}
         {#if item.poster}
           <img class="img" src={item.poster} alt={item.title} loading="lazy" />
         {:else}
