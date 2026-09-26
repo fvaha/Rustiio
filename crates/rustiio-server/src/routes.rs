@@ -65,6 +65,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/playstate/{id}", get(api_playstate).put(api_set_playstate).delete(api_clear_playstate))
         .route("/api/decision/{id}", get(api_decision))
         .route("/art/{id}", get(api_art))
+        .route("/folderart/{id}", get(api_folder_art))
         .route("/api/posters", get(api_posters))
         .route("/api/posters/refresh", post(api_posters_refresh))
         .route("/api/metadata/refresh", post(api_metadata_refresh))
@@ -2031,4 +2032,37 @@ async fn api_device_delete(
 #[derive(serde::Deserialize)]
 struct DeviceDeleteBody {
     key: String,
+}
+
+/// `/folderart/{id}` — slika mape koju je korisnik stavio u mapu (`folder.jpg` i sl.).
+/// Zadane slike za korijene (Filmovi/Serije) idu direktno s web sucelja, ne ovuda.
+async fn api_folder_art(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    let mapa = {
+        let katalog = state.catalog.read().await;
+        katalog.get(&id).map(|cvor| cvor.path.clone())
+    };
+    let Some(mapa) = mapa else {
+        return (StatusCode::NOT_FOUND, "nema takve mape").into_response();
+    };
+    for ime in crate::art::IMENA_MAPNE_SLIKE {
+        let putanja = mapa.join(ime);
+        if !putanja.is_file() {
+            continue;
+        }
+        return match tokio::fs::read(&putanja).await {
+            Ok(bytes) => {
+                let tip = if ime.ends_with(".png") { "image/png" } else { "image/jpeg" };
+                (
+                    [
+                        (header::CONTENT_TYPE, tip.to_string()),
+                        (header::CACHE_CONTROL, "public, max-age=3600".to_string()),
+                    ],
+                    bytes,
+                )
+                    .into_response()
+            }
+            Err(greska) => (StatusCode::INTERNAL_SERVER_ERROR, greska.to_string()).into_response(),
+        };
+    }
+    (StatusCode::NOT_FOUND, "mapa nema svoju sliku").into_response()
 }

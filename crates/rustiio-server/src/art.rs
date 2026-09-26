@@ -82,15 +82,21 @@ impl StoreArt {
 
 impl ArtLookup for StoreArt {
     fn art_url(&self, item_id: &str) -> Option<String> {
+        // Video ima poster iz baze; ako ga nema, nastavljamo na mapu/seriju nize.
         if let Ok(id) = item_id.parse::<i64>() {
-            // Red je bitan: i datoteka i zapis u bazi moraju postojati.
-            return self.has_art(id).then(|| self.url_for(id));
+            if self.has_art(id) {
+                return Some(self.url_for(id));
+            }
         }
         // Serija (`s:slug`) i sezona (`s:slug:2`) nemaju svoj red — poster ide od
         // epizoda. `try_read` namjerno: ako netko upravo piše katalog, bolje bez
         // postera nego čekanje u async putu.
         let catalog = self.catalog.as_ref()?.try_read().ok()?;
         let node = catalog.get(item_id)?;
+        // Mapa sa svojom slikom (`folder.jpg`) ima prednost, pa zadana slika korijena.
+        if let Some(url) = self.mapa_slika(node) {
+            return Some(url);
+        }
         let epizoda = self.poster_from_subtree(node, &catalog)?;
         Some(self.url_for(epizoda))
     }
@@ -175,3 +181,40 @@ mod tests {
         assert_eq!(poster_file_name(""), None);
     }
 }
+
+impl StoreArt {
+    /// Slika mape: `folder.jpg` (i srodna imena) u samoj mapi, a za korijene
+    /// bez slike — ugradjena zadana slika (Filmovi / Serije).
+    fn mapa_slika(&self, node: &Node) -> Option<String> {
+        if !node.is_container() {
+            return None;
+        }
+        for ime in IMENA_MAPNE_SLIKE {
+            let putanja = node.path.join(ime);
+            if putanja.is_file() {
+                let v = std::fs::metadata(&putanja)
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                return Some(format!("/folderart/{}?v={v}", node.id));
+            }
+        }
+        if node.parent_id == "0" {
+            let naziv =
+                node.path.file_name().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+            if naziv.contains("film") || naziv.contains("movie") {
+                return Some("/folder-movies.png".to_string());
+            }
+            if naziv.contains("serij") || naziv.contains("tv") || naziv.contains("show") {
+                return Some("/folder-tv.png".to_string());
+            }
+        }
+        None
+    }
+}
+
+/// Imena datoteka koje Rustiio prihvaca kao sliku mape.
+pub const IMENA_MAPNE_SLIKE: [&str; 7] =
+    ["folder.jpg", "folder.jpeg", "folder.png", "poster.jpg", "cover.jpg", "thumb.jpg", "default.jpg"];
