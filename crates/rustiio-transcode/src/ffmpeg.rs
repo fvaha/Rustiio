@@ -48,9 +48,12 @@ pub fn build_args(request: &StartRequest<'_>) -> Vec<String> {
     args.push(request.input.display().to_string());
 
     // Prvi video i prvi audio — ostalo TV ionako ne koristi.
-    // Kod audio-only transcodea videa nema u izlazu.
-    let audio_only = matches!(decision.mode, PlaybackMode::Transcode { video: false, audio: true });
-    if !audio_only {
+    // `Transcode { video: false, audio: true }` znaci „slika se kopira, zvuk se
+    // re-enkodira" — NE „izlaz bez slike". Zato se video mapira kad god ga izvor
+    // ima (i kad se kopira). Bez toga `-c:v copy` nema na sto djelovati, ffmpeg
+    // tiho napise MPEG-TS samo sa zvukom (stderr ostane prazan), a TV prijavi
+    // gresku formata. Pravi zvucni fajl (bez video staze) i dalje ne dobiva mapu.
+    if decision.source_has_video {
         push(&mut args, &["-map", "0:v:0"]);
     }
     push(&mut args, &["-map", "0:a:0?"]);
@@ -237,6 +240,8 @@ mod tests {
             video_encoder: encoder.map(|value| value.to_string()),
             video_bitrate_kbps: Some(8000),
             source_size: Some((1920, 1080)),
+            // Testni slucajevi su video fajlovi; zvucni fajl je zaseban test.
+            source_has_video: true,
             max_width: None,
             max_height: None,
             audio_encoder: Some("aac".to_string()),
@@ -470,5 +475,39 @@ mod tests {
         let input = PathBuf::from("/media/film.mkv");
         let joined = build_args(&request(&decision, "mkv", &input, None)).join(" ");
         assert!(!joined.contains("-hwaccel"), "HW dekodiranje je isključeno: {joined}");
+    }
+
+    #[test]
+    fn video_copy_with_audio_transcode_keeps_the_picture() {
+        // Dark Matter S02E02 (H.264 8-bit + eac3): profil pusta h264, ne pusta
+        // eac3 → `Transcode { video: false, audio: true }` = slika se kopira.
+        // Prije popravka `-map 0:v:0` je izostajao, ffmpeg je tiho napisao
+        // MPEG-TS samo sa zvukom (stderr prazan), a TV prijavio gresku.
+        let mut decision =
+            decision(PlaybackMode::Transcode { video: false, audio: true }, "mpegts", None, HwAccel::Nvenc);
+        decision.audio_encoder = Some("ac3".to_string());
+        let input = PathBuf::from("/media/dark.matter.s02e02.mkv");
+        let joined = build_args(&request(&decision, "mkv", &input, None)).join(" ");
+
+        assert!(joined.contains("-map 0:v:0"), "kopirani video mora biti u izlazu: {joined}");
+        assert!(joined.contains("-c:v copy"), "{joined}");
+        assert!(joined.contains("-c:a ac3"), "{joined}");
+        assert!(!joined.contains("-c:v h264_nvenc"), "slika se ne re-enkodira: {joined}");
+    }
+
+    #[test]
+    fn audio_only_source_gets_no_video_map() {
+        // Zvucni fajl (nema video staze): `-map 0:v:0` bi srusio ffmpeg
+        // ("matches no streams") — izlaz ostaje samo zvuk.
+        let mut decision =
+            decision(PlaybackMode::Transcode { video: false, audio: true }, "mpegts", None, HwAccel::None);
+        decision.source_has_video = false;
+        decision.source_size = None;
+        decision.audio_encoder = Some("ac3".to_string());
+        let input = PathBuf::from("/media/pjesma.flac");
+        let joined = build_args(&request(&decision, "flac", &input, None)).join(" ");
+
+        assert!(!joined.contains("-map 0:v:0"), "zvucni fajl nema videa: {joined}");
+        assert!(joined.contains("-map 0:a:0?"), "{joined}");
     }
 }

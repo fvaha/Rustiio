@@ -55,6 +55,11 @@ pub struct Decision {
     pub max_height: Option<u32>,
     /// Velicina izvora — skaliranje racunamo sami, bez izraza u filteru.
     pub source_size: Option<(u32, u32)>,
+    /// Ima li izvor uopce video stazu. `Transcode { video: false, audio: true }`
+    /// znaci „video se kopira, zvuk se re-enkodira" — a ne „izlaz bez videa"; ovo
+    /// polje razlikuje pravi zvucni fajl (nema sto kopirati) od video fajla kojem
+    /// se kopira slika.
+    pub source_has_video: bool,
     /// Audio encoder; `None` = kopiraj.
     pub audio_encoder: Option<String>,
     pub audio_channels: Option<u8>,
@@ -170,6 +175,8 @@ pub fn decide(
         }
     };
     odluka.source_size = media.video.as_ref().map(|video| (video.width, video.height));
+    // Izvor ima sliku → izlaz mora imati sliku (kopiranu ili re-enkodiranu).
+    odluka.source_has_video = media.video.is_some();
     odluka
 }
 
@@ -189,6 +196,8 @@ fn remux_decision(profile: &Profile, reasons: Vec<String>, hw: &HwSupport, media
         video_encoder: None,
         video_bitrate_kbps: media.video.as_ref().and_then(|video| video.bitrate_kbps),
         source_size: None,
+        // Upisuje ih `decide` iz zapisa medija.
+        source_has_video: false,
         max_width: None,
         max_height: None,
         audio_encoder: None,
@@ -232,6 +241,8 @@ fn direct_decision(
         video_encoder: None,
         video_bitrate_kbps: media.bitrate_kbps,
         source_size: None,
+        // Upisuje ih `decide` iz zapisa medija.
+        source_has_video: false,
         max_width: None,
         max_height: None,
         audio_encoder: None,
@@ -323,6 +334,7 @@ fn transcode_decision(
         mode: PlaybackMode::Transcode { video, audio },
         // Stvarnu velicinu izvora upisuje `decide` — skaliranje racuna iz nje.
         source_size: None,
+        source_has_video: false,
         reasons,
         protocol_info: info.to_protocol_info(),
         mime: mime.to_string(),
@@ -615,6 +627,19 @@ mod tests {
     }
 
     #[test]
+    fn video_copy_path_keeps_the_video_stream_in_the_output() {
+        // Dark Matter S02E02: h264 koji profil pusta + eac3 koji ne pusta (na boxu
+        // je eac3 izbacen iz Samsung profila). `video: false` ovdje znaci „kopiraj
+        // sliku" — izlaz MORA imati video stazu (bez toga ffmpeg tiho napise TS
+        // samo sa zvukom i TV prijavi gresku).
+        let decision =
+            decide(&media("h264", 1920, 960, "eac3", 6), &profile("generic"), "mkv", true, &hw_soft());
+        assert_eq!(decision.mode, PlaybackMode::Transcode { video: false, audio: true });
+        assert!(decision.source_has_video, "izvor ima sliku — mora je imati i izlaz");
+        assert!(decision.video_encoder.is_none(), "slika se kopira, ne enkodira");
+    }
+
+    #[test]
     fn silent_video_is_not_audio_re_encoded() {
         let mut media = media("hevc", 1920, 1080, "aac", 2);
         media.audio = None;
@@ -643,6 +668,7 @@ mod tests {
         music.audio_streams = music.audio.clone().into_iter().collect();
         let decision = decide(&music, &profile("generic"), "flac", false, &hw_soft());
         assert!(matches!(decision.mode, PlaybackMode::Transcode { video: false, audio: true }));
+        assert!(!decision.source_has_video, "zvucni fajl nema video stazu za kopirati");
         // Ciljni audio dolazi iz profila: Samsung traži AC-3 u TS-u (Serviio isto).
         assert_eq!(decision.audio_encoder.as_deref(), Some("ac3"));
         assert!(decision.video_encoder.is_none() || decision.video_encoder.as_deref() == Some("libx264"));
