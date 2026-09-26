@@ -159,29 +159,6 @@ pub fn serve(store: &Store, art_dir: &Path, item_id: i64) -> Option<(PathBuf, &'
     path.is_file().then(|| (path, content_type(&file)))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn content_type_follows_extension() {
-        assert_eq!(content_type("42.jpg"), "image/jpeg");
-        assert_eq!(content_type("42.JPEG"), "image/jpeg");
-        assert_eq!(content_type("42.png"), "image/png");
-        assert_eq!(content_type("42.webp"), "image/webp");
-        assert_eq!(content_type("bez-nastavka"), "image/jpeg");
-    }
-
-    #[test]
-    fn poster_name_never_leaves_the_cache() {
-        assert_eq!(poster_file_name("42.jpg").as_deref(), Some("42.jpg"));
-        // Putanja iz baze svodi se na zadnji dio — ne izlazi iz mape keša.
-        assert_eq!(poster_file_name("../../etc/passwd").as_deref(), Some("passwd"));
-        assert_eq!(poster_file_name("/tmp/x/99.png").as_deref(), Some("99.png"));
-        assert_eq!(poster_file_name(""), None);
-    }
-}
-
 impl StoreArt {
     /// Slika mape: `folder.jpg` (i srodna imena) u samoj mapi, a za korijene
     /// bez slike — ugradjena zadana slika (Filmovi / Serije).
@@ -218,3 +195,26 @@ impl StoreArt {
 /// Imena datoteka koje Rustiio prihvaca kao sliku mape.
 pub const IMENA_MAPNE_SLIKE: [&str; 7] =
     ["folder.jpg", "folder.jpeg", "folder.png", "poster.jpg", "cover.jpg", "thumb.jpg", "default.jpg"];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn content_type_follows_extension() {
+        assert_eq!(content_type("42.jpg"), "image/jpeg");
+        assert_eq!(content_type("42.JPEG"), "image/jpeg");
+        assert_eq!(content_type("42.png"), "image/png");
+        assert_eq!(content_type("42.webp"), "image/webp");
+        assert_eq!(content_type("bez-nastavka"), "image/jpeg");
+    }
+
+    #[test]
+    fn poster_name_never_leaves_the_cache() {
+        assert_eq!(poster_file_name("42.jpg").as_deref(), Some("42.jpg"));
+        // Putanja iz baze svodi se na zadnji dio — ne izlazi iz mape keša.
+        assert_eq!(poster_file_name("../../etc/passwd").as_deref(), Some("passwd"));
+        assert_eq!(poster_file_name("/tmp/x/99.png").as_deref(), Some("99.png"));
+        assert_eq!(poster_file_name(""), None);
+    }
+}
