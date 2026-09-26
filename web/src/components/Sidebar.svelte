@@ -48,13 +48,6 @@
       <span class="grow small dim">{online ? (t('side.live_log_connected')) : (t('side.log_disconnected'))}</span>
     </div>
     <div class="row tight">
-      <button class="restart-btn" title="Restartuj Rustiio servis (stvarno)" onclick={restartujServis}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-        stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
-        ><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5" /></svg> Restart servisa
-      </button>
-    </div>
-    <div class="row tight">
       <span class="small dim">{t('common.uptime')}</span>
       <span class="grow right small num">{uptime(store.status?.uptime_secs)}</span>
     </div>

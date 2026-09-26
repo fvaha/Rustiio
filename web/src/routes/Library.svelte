@@ -82,10 +82,10 @@
         body: datoteka,
       })
       if (!odgovor.ok) throw new Error(await odgovor.text())
-      toast('ok', `Slika mape postavljena: ${item.title}`)
+      toast('ok', `${t('common.set_image_done')}: ${item.title}`)
       await load()
     } catch (greska) {
-      toast('greska', `Slika mape: ${greska.message}`)
+      toast('greska', `${t('common.set_image')}: ${greska.message}`)
     } finally {
       dogadjaj.currentTarget.value = ''
     }
@@ -255,7 +255,7 @@
           </div>
         {/if}
         {#if item.container}
-          <button class="slika-mapa" title="Postavi sliku mape"
+          <button class="slika-mapa" title={t('common.set_image')}
             onclick={(dogadjaj) => odaberiSliku(dogadjaj)}>
             {@render ikona('image', 15)}
           </button>
