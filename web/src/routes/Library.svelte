@@ -18,7 +18,7 @@
   /* Outline ikone (stroke, bez ispune) — u sucelju nema emojija. */
   const IKONE = {
     image:
-      '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-4.35-4.35a2 2 0 0 0-2.83 0L4 21"/>',
+      '<path d="M16 5h6M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
     folder:
       '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.5l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"/>',
     film:
@@ -256,7 +256,7 @@
         {#if item.container}
           <button class="slika-mapa" title="Postavi sliku mape"
             onclick={(dogadjaj) => odaberiSliku(dogadjaj)}>
-            {@render ikona('image')}
+            {@render ikona('image', 15)}
           </button>
           <input class="slika-ulaz" type="file" accept="image/*"
             onchange={(dogadjaj) => postaviSlikuMape(item, dogadjaj)} />
@@ -367,29 +367,28 @@
      isti jezik kao gumb za osvjezavanje, samo s druge strane kartice. */
   .slika-mapa {
     position: absolute;
-    top: 8px;
-    left: 8px;
+    top: 6px;
+    left: 6px;
     z-index: 2;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: rgba(12, 14, 16, 0.62);
-    color: rgba(255, 255, 255, 0.9);
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    line-height: 1;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.55);
+    color: var(--foreground);
     cursor: pointer;
-    backdrop-filter: blur(3px);
-    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+    appearance: none;
+    -webkit-appearance: none;
+    transition: border-color 0.15s ease, background 0.15s ease;
   }
   .slika-mapa:hover {
-    background: rgba(12, 14, 16, 0.85);
-    border-color: rgba(255, 255, 255, 0.4);
-    transform: scale(1.06);
-  }
-  .slika-mapa:active {
-    transform: scale(0.97);
+    border-color: rgba(255, 255, 255, 0.45);
+    background: rgba(0, 0, 0, 0.72);
   }
   .slika-mapa svg {
     display: block;
