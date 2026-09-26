@@ -88,7 +88,6 @@
         <span class="dot {online ? 'live' : 'off'}"></span>
         {online ? (t('app.connected')) : (t('app.no_log_stream'))}
       </span>
-      <button class="btn ghost" title={t('common.refresh')} onclick={refreshStatus}>⟳</button>
 
       <nav class="mobile-tabs">
         {#each TABS as item}
