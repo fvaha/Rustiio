@@ -33,5 +33,10 @@
     <path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>
     {:else if name === 'trash'}
     <path d="M3 6h18"/><path d="M19 6l-1 13.5A2.5 2.5 0 0 1 15.5 22h-7A2.5 2.5 0 0 1 6 19.5L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V6"/>
-    {/if}
+    {:else if name === 'image'}
+    <path d="M16 5h6M19 2v6" />
+    <path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5" />
+    <circle cx="9" cy="9" r="2" />
+    <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
+  {/if}
 </svg>
