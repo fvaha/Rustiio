@@ -169,6 +169,10 @@ impl Default for SubtitleCaps {
 }
 
 /// Kako pripremiti stream kad uredjaj ne moze izvorni fajl.
+fn zadano_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct TranscodeTarget {
@@ -182,6 +186,10 @@ pub struct TranscodeTarget {
     pub max_height: Option<u32>,
     /// Dopusti remux (`-c copy`) kad su kodeci OK, a samo kontejner smeta.
     pub allow_remux: bool,
+    /// Prekidač iz profila: kad je `false`, uredjaj **nikad** ne ide u transcode
+    /// (uvijek dobiva original kakav jest, bez obzira na kodeke).
+    #[serde(default = "zadano_true")]
+    pub enabled: bool,
 }
 
 impl Default for TranscodeTarget {
@@ -194,6 +202,7 @@ impl Default for TranscodeTarget {
             max_bitrate_kbps: 12_000,
             max_height: None,
             allow_remux: true,
+            enabled: true,
         }
     }
 }

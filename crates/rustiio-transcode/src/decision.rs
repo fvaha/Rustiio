@@ -104,6 +104,7 @@ pub fn decide(
     let mut reasons = Vec::new();
 
     let video_ok = video_supported(media, profile, &mut reasons);
+
     let container_ok = profile.supports_container(&ext);
     let audio_ok = audio_supported(media, profile, &mut reasons);
 
@@ -165,6 +166,13 @@ pub fn decide(
         reasons.push(
             "burn-in nije moguc (ffmpeg bez 'subtitles' filtra) — titl ide kao zaseban resurs".to_string(),
         );
+    }
+
+    // Prekidač u profilu: transcode isključen => uredjaj uvijek dobiva original.
+    if !profile.transcode.enabled {
+        let mut razlozi = reasons.clone();
+        razlozi.push("transcode je isključen u profilu — puštam original".to_string());
+        return direct_decision(profile, &ext, media, razlozi, burn_subtitles, hw);
     }
 
     let mut odluka = match mode {
