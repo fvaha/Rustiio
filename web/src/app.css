@@ -58,8 +58,8 @@ html, body { margin: 0; padding: 0; }
 
 body {
   background:
-    radial-gradient(1200px 600px at 8% -10%, rgba(59, 130, 246, 0.10), transparent 62%),
-    radial-gradient(900px 520px at 92% -14%, rgba(167, 139, 250, 0.09), transparent 58%),
+    radial-gradient(1200px 600px at 8% -10%, rgba(255, 255, 255, 0.055), transparent 62%),
+    radial-gradient(900px 520px at 92% -14%, rgba(255, 255, 255, 0.045), transparent 58%),
     var(--bg);
   color: var(--text);
   font: 14.5px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -107,7 +107,7 @@ a:hover { text-decoration: underline; }
 .nav-item:hover { background: rgba(255, 255, 255, 0.045); color: var(--text); }
 .nav-item.active {
   color: var(--text);
-  background: linear-gradient(90deg, rgba(110, 168, 254, 0.16), rgba(110, 168, 254, 0.02));
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.02));
   box-shadow: inset 2px 0 0 var(--accent);
 }
 .sidebar .foot { margin-top: auto; padding: 12px 8px 0; border-top: 1px solid var(--line); }
@@ -590,7 +590,7 @@ table.tbl td.n, table.tbl th.n { text-align: right; font-variant-numeric: tabula
   display: grid;
   place-items: center;
   border-radius: 15px;
-  background: linear-gradient(160deg, #7c5cff, #4a2fd6);
+  background: linear-gradient(160deg, #3f3f46, #18181b);
   color: #fff;
   font: 700 26px/1 var(--font, system-ui);
   box-shadow: 0 12px 30px rgba(124, 92, 255, 0.28);
