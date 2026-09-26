@@ -19,12 +19,14 @@
   --muted: #a1a1aa;
   --faint: #71717a;
 
-  --accent: #22c55e;
-  --accent-2: #16a34a;
-  --violet: #a78bfa;
-  --teal: #2dd4bf;
-  --ok: #34d399;
-  --warn: #fbbf24;
+  /* Monokrom (shadcn dark): sve je crno-bijelo-sivo, bez zelene.
+     `--err` ostaje jedina boja — da se greske vide u sucelju. */
+  --accent: #e5e5e5;
+  --accent-2: #d4d4d8;
+  --violet: #a1a1aa;
+  --teal: #a1a1aa;
+  --ok: #d4d4d8;
+  --warn: #d4d4d8;
   --err: #fb7185;
 
   --radius: 10px;
